@@ -99,8 +99,8 @@ if defined all (
     fxc !shader!_ps.hlsl !compiler_flags! -T ps_5_1 -Fo build\shaders\d3d12_!shader!_ps.dxbc -Qstrip_reflect > nul
     !dxc! !shader!_vs.hlsl !compiler_flags! -T vs_6_0 -Fo build\shaders\gl_!shader!_vs.spv -spirv
     !dxc! !shader!_ps.hlsl !compiler_flags! -T ps_6_0 -Fo build\shaders\gl_!shader!_fs.spv -spirv
-    !dxc! !shader!_vs.hlsl !compiler_flags! -T vs_6_0 -Fo build\shaders\vk_!shader!_vs.spv -spirv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t0 0 2 0 -vkbr s0 0 2 0
-    !dxc! !shader!_ps.hlsl !compiler_flags! -T ps_6_0 -Fo build\shaders\vk_!shader!_fs.spv -spirv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t0 0 2 0 -vkbr s0 0 2 0
+    !dxc! !shader!_vs.hlsl !compiler_flags! -T vs_6_0 -Fo build\shaders\vk_!shader!_vs.spv -spirv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr b2 0 2 0 -vkbr t0 0 3 0 -vkbr s0 0 3 0
+    !dxc! !shader!_ps.hlsl !compiler_flags! -T ps_6_0 -Fo build\shaders\vk_!shader!_fs.spv -spirv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr b2 0 2 0 -vkbr t0 0 3 0 -vkbr s0 0 3 0
 )
 
 endlocal

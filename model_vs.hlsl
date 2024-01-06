@@ -3,14 +3,14 @@
 // transformations on the vector is read right-to-left.
 // Thus, projection * view * model * position_vector, where model = T * R * S.
 
-cbuffer per_frame : register(b0)
+cbuffer frame_data : register(b0)
 {
     float4x4 projection_view_mtx;
     float3 light_dir;
     float3 camera_pos;
 }
 
-cbuffer per_obj : register(b1)
+cbuffer obj_data : register(b1)
 {
     float4x4 model_mtx;
 }
