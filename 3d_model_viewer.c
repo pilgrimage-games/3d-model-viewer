@@ -15,12 +15,12 @@ typedef struct
     f32 fps;
     f32 frame_time;
     f32 running_time_step;
-    pg_gfx_api gfx_api;     // align: 4
-    pg_art art;             // align: 4
-    pg_f32_3x rotation;     // align: 4
-    pg_f32_3x light_dir;    // align: 4
-    pg_per_frame per_frame; // align: 4
-    pg_per_obj per_obj;     // align: 4
+    pg_gfx_api gfx_api;       // align: 4
+    pg_art art;               // align: 4
+    pg_f32_3x rotation;       // align: 4
+    pg_f32_3x light_dir;      // align: 4
+    pg_frame_data frame_data; // align: 4
+    pg_obj_data obj_data;     // align: 4
     pg_f32_3x* model_scaling;
     pg_assets* assets;
 } application_state;
@@ -30,7 +30,7 @@ pg_config config = {.gfx_force_widescreen = true,
                     .app_fixed_time_step = (1.0f / 60.0f) * PG_MS_IN_S,
                     .app_permanent_mem_size = 200u * PG_MEBIBYTE,
                     .app_transient_mem_size = 25u * PG_KIBIBYTE,
-                    .gfx_mem_size = 25u * PG_KIBIBYTE};
+                    .gfx_mem_size = 50u * PG_KIBIBYTE};
 
 pg_camera camera = {.position = {.z = 8.0f}, .up_axis = {.y = 1.0f}};
 
@@ -96,7 +96,6 @@ imgui_ui(void)
         ImGui_Text("[Left/Up]: Previous Model");
         ImGui_Text("[Right/Down]: Next Model");
         ImGui_Text("[Alt+Enter]: Toggle Fullscreen");
-        ImGui_Text("[Esc]: Exit");
     }
 #endif
 }
@@ -155,8 +154,8 @@ update_app_state(pg_input* input, pg_assets* assets, f32 frame_time)
         app_state.running_time_step -= config.app_fixed_time_step;
     }
 
-    app_state.per_frame.light_dir = app_state.light_dir;
-    app_state.per_obj.model_mtx
+    app_state.frame_data.light_dir = app_state.light_dir;
+    app_state.obj_data.model_mtx
         = pg_f32_4x4_place(app_state.model_scaling[app_state.art.ids[0]],
                            app_state.rotation,
                            (pg_f32_3x){0});
@@ -195,15 +194,15 @@ init_app_state(pg_arena* permanent_mem, pg_assets* assets, pg_error* err)
                  "init_app_state: failed to get memory for model scaling");
     }
 
-    app_state.per_frame = (pg_per_frame){
+    app_state.frame_data = (pg_frame_data){
         .projection_view_mtx = pg_f32_4x4_mul(projection_mtx, view_mtx),
         .light_dir = app_state.light_dir,
         .camera_pos = camera.position};
-    app_state.per_obj
-        = (pg_per_obj){.model_mtx = pg_f32_4x4_place(
-                           app_state.model_scaling[app_state.art.ids[0]],
-                           app_state.rotation,
-                           (pg_f32_3x){0})};
+    app_state.obj_data
+        = (pg_obj_data){.model_mtx = pg_f32_4x4_place(
+                            app_state.model_scaling[app_state.art.ids[0]],
+                            app_state.rotation,
+                            (pg_f32_3x){0})};
 
     // Get normalized scaling for all models.
     for (u32 i = 0; i < assets->model_count; i += 1)
@@ -260,7 +259,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     {
         err.log(&err, PG_ERR_MAJOR, "wWinMain: failed to initialize assets");
     }
-    ok = pg_windows_window_init(&windows, &config, inst);
+    ok = pg_windows_window_init(&windows, &config, inst, true);
     if (!ok)
     {
         err.log(&err, PG_ERR_MAJOR, "wWinMain: failed to initialize window");
@@ -306,8 +305,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                         app_state.gfx_api,
                                         &assets,
                                         app_state.art,
-                                        &app_state.per_frame,
-                                        &app_state.per_obj,
+                                        &app_state.frame_data,
+                                        &app_state.obj_data,
                                         app_state.vsync,
                                         &imgui_ui);
         if (!ok)

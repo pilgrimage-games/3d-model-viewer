@@ -1,5 +1,12 @@
 #define PI 3.14159265359f
 
+cbuffer material_factors : register(b2)
+{
+    float4 base_color_factor;
+    float metallic_factor;
+    float roughness_factor;
+}
+
 struct ps_input
 {
     float4 vertex_pos : SV_POSITION;
@@ -54,9 +61,9 @@ float4 main(ps_input i) : SV_TARGET
     // Sample textures.
     // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed from
     // tangent space to world space.
-    float3 albedo = tex[0].Sample(ss, i.vertex_tc).rgb;
-    float roughness = tex[1].Sample(ss, i.vertex_tc).g;
-    float metallic = tex[1].Sample(ss, i.vertex_tc).b;
+    float3 albedo = tex[0].Sample(ss, i.vertex_tc).rgb * base_color_factor.rgb;
+    float roughness = tex[1].Sample(ss, i.vertex_tc).g * roughness_factor;
+    float metallic = tex[1].Sample(ss, i.vertex_tc).b * metallic_factor;
     float3 normal = tex[2].Sample(ss, i.vertex_tc).rgb;
     normal = (normal * 2.0f) - 1.0f;
     normal = mul(i.tbn_mtx, normal);
