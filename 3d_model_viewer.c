@@ -259,7 +259,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     {
         err.log(&err, PG_ERR_MAJOR, "wWinMain: failed to initialize assets");
     }
-    ok = pg_windows_window_init(&windows, &config, inst, true);
+    ok = pg_windows_window_init(&windows, &config, inst);
     if (!ok)
     {
         err.log(&err, PG_ERR_MAJOR, "wWinMain: failed to initialize window");
