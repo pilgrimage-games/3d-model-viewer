@@ -54,7 +54,7 @@ GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
        .gfx_api = PG_GFX_API_D3D12,
-       .light_dir = {.x = -0.5f, .y = 0.0f, .z = -1.0f},
+       .light_dir = {.x = 0.0f, .y = 0.0f, .z = -1.0f},
        .camera = {.position = {.z = 8.0f}, .up_axis = {.y = 1.0f}}};
 
 FUNCTION void
@@ -83,15 +83,43 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (model_controls_active)
     {
+        f32 x_rotation_rad = pg_f32_deg_to_rad(app_state.rotation.x);
+        ImGui_SliderAngleEx("X Rotation",
+                            &x_rotation_rad,
+                            0.0f,
+                            360.0f,
+                            "%.0f°",
+                            0);
+        app_state.rotation.x = pg_f32_rad_to_deg(x_rotation_rad);
+        if (ImGui_IsItemActive())
+        {
+            app_state.auto_rotate = false;
+        }
+
         f32 y_rotation_rad = pg_f32_deg_to_rad(app_state.rotation.y);
-        ImGui_SliderAngle("Rotation", &y_rotation_rad);
+        ImGui_SliderAngleEx("Y Rotation",
+                            &y_rotation_rad,
+                            0.0f,
+                            360.0f,
+                            "%.0f°",
+                            0);
         app_state.rotation.y = pg_f32_rad_to_deg(y_rotation_rad);
-        b8 manual_rotation = ImGui_IsItemActive();
-        if (manual_rotation)
+        if (ImGui_IsItemActive())
         {
             app_state.auto_rotate = false;
         }
         ImGui_Checkbox("Auto-Rotate", (bool*)&app_state.auto_rotate);
+    }
+
+    b8 camera_controls_active
+        = ImGui_CollapsingHeader("Camera Controls",
+                                 ImGuiTreeNodeFlags_DefaultOpen);
+    if (camera_controls_active)
+    {
+        ImGui_SliderFloat("Z Position (Zoom)",
+                          &app_state.camera.position.z,
+                          0.001f,
+                          16.0f);
     }
 
     b8 lighting_controls_active
@@ -99,10 +127,11 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (lighting_controls_active)
     {
-        ImGui_SliderFloat3("Light Direction",
-                           app_state.light_dir.e,
-                           -1.0f,
-                           1.0f);
+        ImGui_SliderFloat("X Direction", &app_state.light_dir.x, -1.0f, 1.0f);
+
+        ImGui_SliderFloat("Y Direction", &app_state.light_dir.y, -1.0f, 1.0f);
+
+        ImGui_SliderFloat("Z Direction", &app_state.light_dir.z, -1.0f, 1.0f);
     }
 
     b8 keyboard_controls_active
