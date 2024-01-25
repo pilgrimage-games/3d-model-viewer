@@ -108,7 +108,7 @@ float4 main(ps_input i) : SV_TARGET
     float attenuation = 1.0f; // attenuation = 1.0f for directional lights
     float3 radiance = light_color * attenuation;
 
-    float3 ambient = albedo * float3(0.03f, 0.03f, 0.03f);
+    float3 ambient = albedo * float3(0.1f, 0.1f, 0.1f);
 
     float3 color = (brdf * radiance * n_dot_l) + ambient + emissive;
 
