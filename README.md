@@ -36,7 +36,10 @@ The included 3D models are processed from their original glTF 2.0 binary format
 
 ### Attributions
 * "Corset" by Microsoft is Public Domain.
-* "Damaged Helmet" by theblueturtle_ is licensed under CC BY-NC 4.0.
-* "Metal-Rough Spheres" by Ed Mackey is licensed under CC BY 4.0.
+* "Damaged Helmet" by theblueturtle_ is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+* "Ftm" by luyssport is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+* "Medieval Fantasy Book" by Pixel is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+* "Metal-Rough Spheres" by Ed Mackey is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+* "PlayStation 1" by Lars Maes is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 * "Water Bottle" by Microsoft is Public Domain.
 

@@ -46,7 +46,7 @@ typedef struct
 GLOBAL pg_config config = {.gfx_force_widescreen = true,
                            .input_repeat_rate = 750.0f,
                            .app_fixed_time_step = (1.0f / 60.0f) * PG_MS_IN_S,
-                           .app_permanent_mem_size = 250u * PG_MEBIBYTE,
+                           .app_permanent_mem_size = 1u * PG_GIBIBYTE,
                            .app_transient_mem_size = 1u * PG_KIBIBYTE,
                            .gfx_mem_size = 50u * PG_KIBIBYTE};
 
@@ -279,7 +279,7 @@ update_app(pg_input* input,
     {
         if (app_state.auto_rotate)
         {
-            app_state.rotation.y += 1.0f;
+            app_state.rotation.y += 0.5f;
             if (app_state.rotation.y > 359.0f)
             {
                 app_state.rotation.y = 0.0f;
