@@ -108,6 +108,20 @@ imgui_ui(void)
         {
             app_state.auto_rotate = false;
         }
+
+        f32 z_rotation_rad = pg_f32_deg_to_rad(app_state.rotation.z);
+        ImGui_SliderAngleEx("Z Rotation",
+                            &z_rotation_rad,
+                            0.0f,
+                            360.0f,
+                            "%.0f°",
+                            0);
+        app_state.rotation.z = pg_f32_rad_to_deg(z_rotation_rad);
+        if (ImGui_IsItemActive())
+        {
+            app_state.auto_rotate = false;
+        }
+
         ImGui_Checkbox("Auto-Rotate", (bool*)&app_state.auto_rotate);
     }
 
@@ -268,7 +282,7 @@ update_app(pg_input* input,
             app_state.rotation.y += 1.0f;
             if (app_state.rotation.y > 359.0f)
             {
-                app_state.rotation.y = -360.0f;
+                app_state.rotation.y = 0.0f;
             }
         }
 
