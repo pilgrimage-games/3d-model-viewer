@@ -3,12 +3,25 @@
 #define PG_APP_IMGUI
 
 #define MAX_OBJECT_COUNT 1u
+#define DEFAULT_CAMERA_Z_POSITION 6.0f
 
 #if defined(WINDOWS)
 #include <windows/pg_windows.h>
 #else
 static_assert(0, "no supported platform is defined");
 #endif
+
+typedef enum
+{
+    MDL_BAKER_AND_THE_BRIDGE,
+    MDL_CORSET,
+    MDL_DAMAGED_HELMET,
+    MDL_FTM,
+    MDL_METAL_ROUGH_SPHERES,
+    MDL_PLAYSTATION_1,
+    MDL_WATER_BOTTLE,
+    MDL_COUNT
+} asset_type_model;
 
 // NOTE: This represents constant buffer data so struct members must not cross
 // a 16-byte boundary and struct alignment must be to 256 bytes.
@@ -55,7 +68,36 @@ GLOBAL application_state app_state
        .auto_rotate = true,
        .gfx_api = PG_GFX_API_D3D12,
        .light_dir = {.x = 0.0f, .y = 0.0f, .z = -1.0f},
-       .camera = {.position = {.z = 8.0f}, .up_axis = {.y = 1.0f}}};
+       .camera = {.position = {.z = DEFAULT_CAMERA_Z_POSITION},
+                  .up_axis = {.y = 1.0f}}};
+
+void
+reset_view(void)
+{
+    switch (app_state.art.ids[0])
+    {
+        case MDL_FTM:
+        {
+            app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
+            app_state.camera.position.z = 1.0f;
+            break;
+        }
+        case MDL_PLAYSTATION_1:
+        {
+            app_state.rotation
+                = (pg_f32_3x){.x = 90.0f, .y = 0.0f, .z = 270.0f};
+            app_state.camera.position.z = DEFAULT_CAMERA_Z_POSITION;
+            break;
+        }
+        default:
+        {
+            app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
+            app_state.camera.position.z = DEFAULT_CAMERA_Z_POSITION;
+            break;
+        }
+    }
+    app_state.auto_rotate = true;
+}
 
 FUNCTION void
 imgui_ui(void)
@@ -70,11 +112,16 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (model_selection_active)
     {
+        u32 model_id = app_state.art.ids[0];
         for (u32 i = 0; i < app_state.assets.model_count; i += 1)
         {
             ImGui_RadioButtonIntPtr(app_state.assets.models[i].name,
                                     (s32*)&app_state.art.ids[0],
                                     i);
+        }
+        if (app_state.art.ids[0] != model_id)
+        {
+            reset_view();
         }
     }
 
@@ -133,7 +180,7 @@ imgui_ui(void)
         ImGui_SliderFloat("Z Position (Zoom)",
                           &app_state.camera.position.z,
                           0.001f,
-                          16.0f);
+                          DEFAULT_CAMERA_Z_POSITION * 2.0f);
     }
 
     b8 lighting_controls_active
@@ -248,12 +295,13 @@ update_app(pg_input* input,
     {
         if (app_state.art.ids[0] == 0)
         {
-            app_state.art.ids[0] = app_state.assets.model_count - 1;
+            app_state.art.ids[0] = MDL_COUNT - 1;
         }
         else
         {
             app_state.art.ids[0] -= 1;
         }
+        reset_view();
     }
 
     // Right/Down: Next Model
@@ -272,6 +320,7 @@ update_app(pg_input* input,
         {
             app_state.art.ids[0] += 1;
         }
+        reset_view();
     }
 
     // Every fixed time step, update model rotation.
@@ -327,6 +376,10 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                        &pg_windows_read_file,
                        &app_state.assets,
                        &err);
+    if (app_state.assets.model_count != MDL_COUNT)
+    {
+        err.log(&err, PG_ERROR_MAJOR, "wWinMain: unexpected model count");
+    }
 
     init_app(&dynamic_cb_data,
              &projection_mtx,
