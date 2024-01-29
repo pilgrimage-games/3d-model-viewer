@@ -2,8 +2,8 @@
 #define PG_APP_GFX_API
 #define PG_APP_IMGUI
 
-#define MAX_OBJECT_COUNT 1u
 #define DEFAULT_CAMERA_Z_POSITION 6.0f
+#define MAX_OBJECT_COUNT 1u
 
 #if defined(WINDOWS)
 #include <windows/pg_windows.h>
@@ -13,25 +13,26 @@ static_assert(0, "no supported platform is defined");
 
 typedef enum
 {
-    MDL_BAKER_AND_THE_BRIDGE,
-    MDL_CORSET,
-    MDL_DAMAGED_HELMET,
-    MDL_FTM,
-    MDL_METAL_ROUGH_SPHERES,
-    MDL_PLAYSTATION_1,
-    MDL_WATER_BOTTLE,
-    MDL_COUNT
-} asset_type_model;
+    ART_MODEL_BAKER_AND_THE_BRIDGE,
+    ART_MODEL_CORSET,
+    ART_MODEL_DAMAGED_HELMET,
+    ART_MODEL_FTM,
+    ART_MODEL_METAL_ROUGH_SPHERES,
+    ART_MODEL_PLAYSTATION_1,
+    ART_MODEL_WATER_BOTTLE,
+    ART_COUNT
+} asset_type_art;
 
 // NOTE: This represents constant buffer data so struct members must not cross
 // a 16-byte boundary and struct alignment must be to 256 bytes.
 typedef struct
 {
-    pg_f32_4x4 projection_view_mtx;
+    pg_f32_4x4 projection_mtx;
+    pg_f32_4x4 view_mtx;
     pg_f32_3x light_dir;
     f32 padding_0;
     pg_f32_3x camera_pos;
-    f32 padding_1[41];
+    f32 padding_1[25];
 } frame_data;
 
 // NOTE: This represents constant buffer data so struct members must not cross
@@ -46,6 +47,7 @@ typedef struct
 {
     b8 vsync;
     b8 auto_rotate;
+    u32 art_id;
     f32 fps;
     f32 frame_time;
     pg_gfx_api gfx_api;  // align: 4
@@ -53,7 +55,6 @@ typedef struct
     pg_f32_3x light_dir; // align: 4
     pg_camera camera;    // align: 4
     pg_assets assets;    // align: 8 (ptr)
-    pg_art art;          // align: 8 (ptr)
 } application_state;
 
 GLOBAL pg_config config = {.gfx_force_widescreen = true,
@@ -74,15 +75,15 @@ GLOBAL application_state app_state
 void
 reset_view(void)
 {
-    switch (app_state.art.ids[0])
+    switch (app_state.art_id)
     {
-        case MDL_FTM:
+        case ART_MODEL_FTM:
         {
             app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
             app_state.camera.position.z = 1.0f;
             break;
         }
-        case MDL_PLAYSTATION_1:
+        case ART_MODEL_PLAYSTATION_1:
         {
             app_state.rotation
                 = (pg_f32_3x){.x = 90.0f, .y = 0.0f, .z = 270.0f};
@@ -112,14 +113,14 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (model_selection_active)
     {
-        u32 model_id = app_state.art.ids[0];
-        for (u32 i = 0; i < app_state.assets.model_count; i += 1)
+        u32 model_id = app_state.art_id;
+        for (u32 i = 0; i < app_state.assets.art_count; i += 1)
         {
-            ImGui_RadioButtonIntPtr(app_state.assets.models[i].name,
-                                    (s32*)&app_state.art.ids[0],
+            ImGui_RadioButtonIntPtr(app_state.assets.art[i].name,
+                                    (s32*)&app_state.art_id,
                                     i);
         }
-        if (app_state.art.ids[0] != model_id)
+        if (app_state.art_id != model_id)
         {
             reset_view();
         }
@@ -216,18 +217,6 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
 {
     b8 ok = true;
 
-    ok = pg_arena_push(&app_state.art.ids,
-                       permanent_mem,
-                       sizeof(u32),
-                       alignof(u32));
-    if (!ok)
-    {
-        err->log(err,
-                 PG_ERROR_MAJOR,
-                 "init_app_state: failed to get memory for art ids");
-    }
-    app_state.art.model_count = MAX_OBJECT_COUNT;
-
     pg_dynamic_cb_data_create(sizeof(frame_data),
                               sizeof(object_data),
                               MAX_OBJECT_COUNT,
@@ -239,7 +228,7 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
     // Get normalized scaling for all models.
     ok = pg_arena_push(model_scaling,
                        permanent_mem,
-                       app_state.assets.model_count * sizeof(pg_f32_3x),
+                       app_state.assets.art_count * sizeof(pg_f32_3x),
                        alignof(pg_f32_3x));
     if (!ok)
     {
@@ -247,15 +236,15 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
                  PG_ERROR_MAJOR,
                  "init_app_state: failed to get memory for model scaling");
     }
-    for (u32 i = 0; i < app_state.assets.model_count; i += 1)
+    for (u32 i = 0; i < app_state.assets.art_count; i += 1)
     {
         f32 norm_scale = 0.0f;
-        for (u32 j = 0; j < app_state.assets.models[i].mesh_count; j += 1)
+        for (u32 j = 0; j < app_state.assets.art[i].mesh_count; j += 1)
         {
-            pg_model_mesh* m = &app_state.assets.models[i].meshes[j];
-            for (u32 k = 0; k < m->vertex_count; k += 1)
+            pg_mesh* mesh = &app_state.assets.art[i].meshes[j];
+            for (u32 k = 0; k < mesh->vertex_count; k += 1)
             {
-                pg_f32_3x position = m->vertices[k].position;
+                pg_f32_3x position = mesh->vertices[k].position;
                 for (u32 l = 0; l < CAP(position.e); l += 1)
                 {
                     f32 v = position.e[l];
@@ -293,13 +282,13 @@ update_app(pg_input* input,
                              config.input_repeat_rate,
                              frame_time))
     {
-        if (app_state.art.ids[0] == 0)
+        if (app_state.art_id == 0)
         {
-            app_state.art.ids[0] = MDL_COUNT - 1;
+            app_state.art_id = ART_COUNT - 1;
         }
         else
         {
-            app_state.art.ids[0] -= 1;
+            app_state.art_id -= 1;
         }
         reset_view();
     }
@@ -312,13 +301,13 @@ update_app(pg_input* input,
                              config.input_repeat_rate,
                              frame_time))
     {
-        if (app_state.art.ids[0] == app_state.assets.model_count - 1)
+        if (app_state.art_id == app_state.assets.art_count - 1)
         {
-            app_state.art.ids[0] = 0;
+            app_state.art_id = 0;
         }
         else
         {
-            app_state.art.ids[0] += 1;
+            app_state.art_id += 1;
         }
         reset_view();
     }
@@ -338,20 +327,15 @@ update_app(pg_input* input,
         *running_time_step -= config.app_fixed_time_step;
     }
 
-    pg_f32_4x4 view_mtx = pg_f32_4x4_look_at(&app_state.camera);
-    frame_data fd
-        = {.projection_view_mtx = pg_f32_4x4_mul(*projection_mtx, view_mtx),
-           .light_dir = app_state.light_dir,
-           .camera_pos = app_state.camera.position};
+    frame_data fd = {.projection_mtx = *projection_mtx,
+                     .view_mtx = pg_f32_4x4_look_at(&app_state.camera),
+                     .light_dir = app_state.light_dir,
+                     .camera_pos = app_state.camera.position};
     object_data od
-        = {.model_mtx = pg_f32_4x4_place(model_scaling[app_state.art.ids[0]],
+        = {.model_mtx = pg_f32_4x4_place(model_scaling[app_state.art_id],
                                          app_state.rotation,
                                          (pg_f32_3x){0})};
-    pg_dynamic_cb_data_update(dynamic_cb_data,
-                              &fd,
-                              &od,
-                              app_state.art.model_count,
-                              err);
+    pg_dynamic_cb_data_update(dynamic_cb_data, &fd, &od, MAX_OBJECT_COUNT, err);
 }
 
 #if defined(WINDOWS)
@@ -376,9 +360,11 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                        &pg_windows_read_file,
                        &app_state.assets,
                        &err);
-    if (app_state.assets.model_count != MDL_COUNT)
+    if (app_state.assets.art_count != ART_COUNT)
     {
-        err.log(&err, PG_ERROR_MAJOR, "wWinMain: unexpected model count");
+        err.log(&err,
+                PG_ERROR_MAJOR,
+                "wWinMain: unexpected number of art assets");
     }
 
     init_app(&dynamic_cb_data,
@@ -421,8 +407,9 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         pg_windows_update_graphics(&windows,
                                    app_state.gfx_api,
                                    &app_state.assets,
+                                   &app_state.art_id,
+                                   MAX_OBJECT_COUNT,
                                    &dynamic_cb_data,
-                                   app_state.art,
                                    app_state.vsync,
                                    &imgui_ui,
                                    &err);

@@ -1,4 +1,5 @@
 #define PI 3.14159265359f
+#define TEXTURE_COUNT 4
 
 cbuffer material_properties : register(b2)
 {
@@ -21,7 +22,7 @@ struct ps_input
     float3 view_dir : POSITION1;   // world space (towards target)
 };
 
-Texture2D tex[4] : TEXTURE : register(t0);
+Texture2D tex[TEXTURE_COUNT] : TEXTURE : register(t0);
 SamplerState ss : SAMPLER : register(s0);
 
 // Fresnel Reflectance using Schlick approximation
@@ -66,13 +67,13 @@ float4 get_albedo(ps_input i)
 {
     float4 albedo = tex[0].Sample(ss, i.tex_coord) * base_color_factor;
 
-    bool has_alpha = min(alpha_mode, 1);
-    albedo.a = (albedo.a * (int)has_alpha) + (1.0f * (1 - (int)has_alpha));
-
     if (alpha_mode == 1 && albedo.a < alpha_cutoff)
     {
         discard;
     }
+
+    bool has_alpha = max(alpha_mode, 1) - 1;
+    albedo.a = (albedo.a * (int)has_alpha) + (1.0f * (1 - (int)has_alpha));
 
     return albedo;
 }
