@@ -5,7 +5,8 @@
 
 cbuffer frame_data : register(b0)
 {
-    float4x4 projection_view_mtx;
+    float4x4 projection_mtx;
+    float4x4 view_mtx;
     float3 light_dir;
     float3 camera_pos;
 }
@@ -37,7 +38,7 @@ struct vs_output
 vs_output main(vs_input i)
 {
     vs_output o;
-    o.position = mul(mul(projection_view_mtx, model_mtx), float4(i.position, 1.0f));
+    o.position = mul(mul(mul(projection_mtx, view_mtx), model_mtx), float4(i.position, 1.0f));
 
     o.tex_coord = i.tex_coord;
 

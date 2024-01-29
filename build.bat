@@ -71,7 +71,6 @@ if defined all (
         mkdir build\shaders\
     )
 
-    set shader=model
     set dxc=!VULKAN_SDK!\Bin\dxc
 
     rem -Zi: Enable debug info
@@ -92,14 +91,14 @@ if defined all (
     rem -Qstrip_reflect: Strip reflection data
     rem -spirv: Output SPIR-V (OpenGL/Vulkan)
     rem -vkbr a b c d: Assign HLSL register (a) in space (b) to binding (c) in descriptor set (d) (Vulkan)
-    fxc !shader!_vs.hlsl !compiler_flags! -T vs_5_0 -Fo build\shaders\d3d11_!shader!_vs.dxbc -Qstrip_reflect > nul
-    fxc !shader!_ps.hlsl !compiler_flags! -T ps_5_0 -Fo build\shaders\d3d11_!shader!_ps.dxbc -Qstrip_reflect > nul
-    fxc !shader!_vs.hlsl !compiler_flags! -T vs_5_1 -Fo build\shaders\d3d12_!shader!_vs.dxbc -Qstrip_reflect > nul
-    fxc !shader!_ps.hlsl !compiler_flags! -T ps_5_1 -Fo build\shaders\d3d12_!shader!_ps.dxbc -Qstrip_reflect > nul
-    !dxc! !shader!_vs.hlsl !compiler_flags! -T vs_6_0 -Fo build\shaders\gl_!shader!_vs.spv -spirv
-    !dxc! !shader!_ps.hlsl !compiler_flags! -T ps_6_0 -Fo build\shaders\gl_!shader!_ps.spv -spirv
-    !dxc! !shader!_vs.hlsl !compiler_flags! -T vs_6_0 -Fo build\shaders\vk_!shader!_vs.spv -spirv -vkbr b0 0 0 0 -vkbr b1 0 0 1
-    !dxc! !shader!_ps.hlsl !compiler_flags! -T ps_6_0 -Fo build\shaders\vk_!shader!_ps.spv -spirv -vkbr b2 0 0 2 -vkbr t0 0 1 2 -vkbr s0 0 1 2
+    fxc vs.hlsl !compiler_flags! -T vs_5_0 -Fo build\shaders\d3d11_vs.dxbc -Qstrip_reflect > nul
+    fxc ps.hlsl !compiler_flags! -T ps_5_0 -Fo build\shaders\d3d11_ps.dxbc -Qstrip_reflect > nul
+    fxc vs.hlsl !compiler_flags! -T vs_5_1 -Fo build\shaders\d3d12_vs.dxbc -Qstrip_reflect > nul
+    fxc ps.hlsl !compiler_flags! -T ps_5_1 -Fo build\shaders\d3d12_ps.dxbc -Qstrip_reflect > nul
+    !dxc! vs.hlsl !compiler_flags! -T vs_6_0 -Fo build\shaders\gl_vs.spv -spirv
+    !dxc! ps.hlsl !compiler_flags! -T ps_6_0 -Fo build\shaders\gl_ps.spv -spirv
+    !dxc! vs.hlsl !compiler_flags! -T vs_6_0 -Fo build\shaders\vk_vs.spv -spirv -vkbr b0 0 0 0 -vkbr b1 0 0 1
+    !dxc! ps.hlsl !compiler_flags! -T ps_6_0 -Fo build\shaders\vk_ps.spv -spirv -vkbr b2 0 0 2 -vkbr t0 0 1 2 -vkbr s0 0 1 2
 
     rem Asset Compilation
     asset_compiler
