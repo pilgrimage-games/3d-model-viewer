@@ -2,7 +2,19 @@
 #define PG_APP_GFX_API
 #define PG_APP_IMGUI
 
-#define DEFAULT_CAMERA_Z_POSITION 6.0f
+// NOTE: Phi must be in the range [0, 2*PG_PI)
+// NOTE: Theta must be in the range [0, PG_PI]
+#define CAMERA_DEFAULT_THETA PG_PI / 2.0f
+#define CAMERA_DEFAULT_PHI PG_PI / 2.0f
+#define CAMERA_DEFAULT_ZOOM 6.0f
+
+// TODO: Move to pg_camera?
+#define CAMERA_MIN_ZOOM 0.001f
+#define CAMERA_MAX_ZOOM CAMERA_DEFAULT_ZOOM * 2.0f
+#define CAMERA_ROTATION_RATE 60u // degrees/sec
+#define CAMERA_ZOOM_RATE 45.0f
+
+#define MODEL_ROTATION_RATE 30u // degrees/sec
 
 #define MAX_OBJECT_COUNT 1u
 
@@ -24,6 +36,18 @@ typedef enum
     ART_COUNT
 } asset_type_art;
 
+typedef enum
+{
+    INPUT_EVENT_NO_EVENT,
+    INPUT_EVENT_ROTATE_DOWN,
+    INPUT_EVENT_ROTATE_LEFT,
+    INPUT_EVENT_ROTATE_RIGHT,
+    INPUT_EVENT_ROTATE_UP,
+    INPUT_EVENT_ZOOM_IN,
+    INPUT_EVENT_ZOOM_OUT,
+    INPUT_EVENT_COUNT
+} input_event;
+
 // NOTE: This represents constant buffer data so struct members must not cross
 // a 16-byte boundary and struct alignment must be to 256 bytes.
 typedef struct
@@ -44,11 +68,12 @@ typedef struct
     f32 padding_0[48];
 } object_data;
 
+// NOTE: Camera position is stored as a spherical coordinate. Theta represents
+// movement along the y-axis. Phi represents movement along the x-axis.
 typedef struct
 {
     b8 vsync;
     b8 auto_rotate;
-    b8 mouse_rotation;
     u32 art_id;
     f32 fps;
     f32 frame_time;
@@ -60,22 +85,21 @@ typedef struct
     pg_assets assets;       // align: 8 (ptr)
 } application_state;
 
-GLOBAL pg_config config = {.gfx_force_widescreen = true,
+GLOBAL pg_config config = {.input_gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
-                           .app_fixed_time_step = (1.0f / 60.0f) * PG_MS_IN_S,
+                           .app_fixed_time_step = 1.0f / 480.0f,
                            .app_permanent_mem_size = 1u * PG_GIBIBYTE,
                            .app_transient_mem_size = 1u * PG_KIBIBYTE,
                            .gfx_mem_size = 50u * PG_KIBIBYTE};
 
-// NOTE: Camera position is stored as a spherical coordinate (zoom, theta, phi).
 GLOBAL application_state app_state
     = {.vsync = true,
-       .auto_rotate = false,   // TODO
-       .mouse_rotation = true, // TODO
+       .auto_rotate = true,
        .gfx_api = PG_GFX_API_D3D12,
        .light_dir = {.x = 0.0f, .y = 0.0f, .z = -1.0f},
-       .camera = {.theta = PG_CAMERA_DEFAULT_THETA,
-                  .phi = PG_CAMERA_DEFAULT_PHI,
+       .camera = {.theta = CAMERA_DEFAULT_THETA,
+                  .phi = CAMERA_DEFAULT_PHI,
+                  .zoom = CAMERA_DEFAULT_ZOOM,
                   .up_axis = {.y = 1.0f}}};
 
 void
@@ -86,25 +110,25 @@ reset_view(void)
         case ART_MODEL_FTM:
         {
             app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 180.0f, .z = 0.0f};
-            camera_zoom = 1.0f;
+            app_state.camera.zoom = 1.0f;
             break;
         }
         case ART_MODEL_PLAYSTATION_1:
         {
             app_state.rotation
                 = (pg_f32_3x){.x = 90.0f, .y = 0.0f, .z = 270.0f};
-            camera_zoom = PG_CAMERA_DEFAULT_ZOOM;
+            app_state.camera.zoom = CAMERA_DEFAULT_ZOOM;
             break;
         }
         default:
         {
             app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
-            camera_zoom = PG_CAMERA_DEFAULT_ZOOM;
+            app_state.camera.zoom = CAMERA_DEFAULT_ZOOM;
             break;
         }
     }
-    app_state.camera.theta = PG_CAMERA_DEFAULT_THETA;
-    app_state.camera.phi = PG_CAMERA_DEFAULT_PHI;
+    app_state.camera.theta = CAMERA_DEFAULT_THETA;
+    app_state.camera.phi = CAMERA_DEFAULT_PHI;
     app_state.auto_rotate = true;
 }
 
@@ -134,15 +158,6 @@ imgui_ui(void)
         }
     }
 
-    b8 model_controls_active
-        = ImGui_CollapsingHeader("Model Controls",
-                                 ImGuiTreeNodeFlags_DefaultOpen);
-    if (model_controls_active)
-    {
-        ImGui_Checkbox("Auto-Rotate", (bool*)&app_state.auto_rotate);
-        ImGui_Checkbox("Mouse Rotation", (bool*)&app_state.mouse_rotation);
-    }
-
     b8 lighting_controls_active
         = ImGui_CollapsingHeader("Lighting Controls",
                                  ImGuiTreeNodeFlags_DefaultOpen);
@@ -164,7 +179,130 @@ imgui_ui(void)
         ImGui_Text("[Right/Down]: Next Model");
         ImGui_Text("[Alt+Enter]: Toggle Fullscreen");
     }
+
+    b8 mouse_controls_active
+        = ImGui_CollapsingHeader("Mouse Controls",
+                                 ImGuiTreeNodeFlags_DefaultOpen);
+    if (mouse_controls_active)
+    {
+        ImGui_Text("[Scroll Up/Scroll Down]: Zoom In/Zoom Out");
+        ImGui_Text("[Left Click + Drag]: Rotate camera around model");
+    }
+
+    b8 gamepad_controls_active
+        = ImGui_CollapsingHeader("Gamepad Controls",
+                                 ImGuiTreeNodeFlags_DefaultOpen);
+    if (gamepad_controls_active)
+    {
+        ImGui_Text("[D-pad Left/Up]: Previous Model");
+        ImGui_Text("[D-pad Right/Down]: Next Model");
+        ImGui_Text("[Right Trigger/Left Trigger]: Zoom In/Zoom Out");
+        ImGui_Text("[Right Thumbstick]: Rotate camera around model");
+    }
 #endif
+}
+
+FUNCTION input_event
+process_input(pg_input* input)
+{
+    // Mouse
+    if (pg_button_pressed(&input->mouse.left,
+                          app_state.frame_time,
+                          app_state.frame_time))
+    {
+        app_state.auto_rotate = false;
+
+        pg_f32_2x mouse_cursor_delta
+            = pg_f32_2x_sub(app_state.mouse_cursor, input->mouse.cursor);
+        f32 cursor_x_delta = mouse_cursor_delta.x >= 0.0f
+                                 ? mouse_cursor_delta.x
+                                 : -mouse_cursor_delta.x;
+        f32 cursor_y_delta = mouse_cursor_delta.y >= 0.0f
+                                 ? mouse_cursor_delta.y
+                                 : -mouse_cursor_delta.y;
+
+        if (cursor_x_delta > cursor_y_delta)
+        {
+            if (mouse_cursor_delta.x > 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_RIGHT;
+            }
+
+            if (mouse_cursor_delta.x < 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_LEFT;
+            }
+        }
+        else
+        {
+            if (mouse_cursor_delta.y > 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_UP;
+            }
+
+            if (mouse_cursor_delta.y < 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_DOWN;
+            }
+        }
+    }
+    if (mouse_wheel_delta < 0.0f)
+    {
+        mouse_wheel_delta = 0.0f;
+        return INPUT_EVENT_ZOOM_IN;
+    }
+    if (mouse_wheel_delta > 0.0f)
+    {
+        mouse_wheel_delta = 0.0f;
+        return INPUT_EVENT_ZOOM_OUT;
+    }
+
+    // Gamepad
+    pg_f32_2x gamepad_rs_delta
+        = pg_f32_2x_sub((pg_f32_2x){.x = 0.0f, .y = 0.0f}, input->gp[0].rs);
+    f32 gamepad_rs_x_delta
+        = gamepad_rs_delta.x >= 0.0f ? gamepad_rs_delta.x : -gamepad_rs_delta.x;
+    f32 gamepad_rs_y_delta
+        = gamepad_rs_delta.y >= 0.0f ? gamepad_rs_delta.y : -gamepad_rs_delta.y;
+    if (gamepad_rs_x_delta > 0.0f || gamepad_rs_y_delta > 0.0f)
+    {
+        app_state.auto_rotate = false;
+
+        if (gamepad_rs_x_delta > gamepad_rs_y_delta)
+        {
+            if (gamepad_rs_delta.x > 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_RIGHT;
+            }
+
+            if (gamepad_rs_delta.x < 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_LEFT;
+            }
+        }
+        else
+        {
+            if (gamepad_rs_delta.y > 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_UP;
+            }
+
+            if (gamepad_rs_delta.y < 0.0f)
+            {
+                return INPUT_EVENT_ROTATE_DOWN;
+            }
+        }
+    }
+    if (input->gp[0].lt > 0.0f)
+    {
+        return INPUT_EVENT_ZOOM_OUT;
+    }
+    if (input->gp[0].rt > 0.0f)
+    {
+        return INPUT_EVENT_ZOOM_IN;
+    }
+
+    return INPUT_EVENT_NO_EVENT;
 }
 
 FUNCTION void
@@ -239,6 +377,12 @@ update_app(pg_input* input,
                           frame_time)
         || pg_button_pressed(&input->kbd.up,
                              config.input_repeat_rate,
+                             frame_time)
+        || pg_button_pressed(&input->gp[0].left,
+                             config.input_repeat_rate,
+                             frame_time)
+        || pg_button_pressed(&input->gp[0].up,
+                             config.input_repeat_rate,
                              frame_time))
     {
         if (app_state.art_id == 0)
@@ -258,6 +402,12 @@ update_app(pg_input* input,
                           frame_time)
         || pg_button_pressed(&input->kbd.down,
                              config.input_repeat_rate,
+                             frame_time)
+        || pg_button_pressed(&input->gp[0].right,
+                             config.input_repeat_rate,
+                             frame_time)
+        || pg_button_pressed(&input->gp[0].down,
+                             config.input_repeat_rate,
                              frame_time))
     {
         if (app_state.art_id == app_state.assets.art_count - 1)
@@ -271,94 +421,116 @@ update_app(pg_input* input,
         reset_view();
     }
 
-    // Every fixed time step, update model and camera rotation.
-    if (*running_time_step >= config.app_fixed_time_step)
+    input_event event = process_input(input);
+
+    while (*running_time_step != 0)
     {
-        // Left Mouse Click and Mouse Movement: Rotate camera about origin.
-        if (app_state.mouse_rotation)
+        f32 dt = config.app_fixed_time_step;
+        if (*running_time_step < dt)
         {
-            app_state.auto_rotate = false;
+            dt = *running_time_step;
+        }
 
-            if (pg_button_pressed(&input->mouse.left, frame_time, frame_time))
+        switch (event)
+        {
+            case INPUT_EVENT_NO_EVENT:
             {
-                pg_f32_2x mouse_cursor_delta
-                    = pg_f32_2x_sub(app_state.mouse_cursor,
-                                    input->mouse.cursor);
-                f32 cursor_x_delta = mouse_cursor_delta.x >= 0.0f
-                                         ? mouse_cursor_delta.x
-                                         : -mouse_cursor_delta.x;
-                f32 cursor_y_delta = mouse_cursor_delta.y >= 0.0f
-                                         ? mouse_cursor_delta.y
-                                         : -mouse_cursor_delta.y;
-
-                if (cursor_x_delta > cursor_y_delta)
-                {
-                    // NOTE: Phi must be in the range [0, 2*PG_PI)
-                    // Move cursor to the left, move camera right.
-                    if (mouse_cursor_delta.x > 0.0f)
-                    {
-                        app_state.camera.phi -= PG_PI * PG_CAMERA_ROTATION_RATE;
-                        if (app_state.camera.phi < 0.0f)
-                        {
-                            app_state.camera.phi = (2.0f * PG_PI);
-                        }
-                    }
-                    // Move cursor to the right, move camera left.
-                    if (mouse_cursor_delta.x < 0.0f)
-                    {
-                        app_state.camera.phi += PG_PI * PG_CAMERA_ROTATION_RATE;
-                        if (app_state.camera.phi > (2.0f * PG_PI))
-                        {
-                            app_state.camera.phi = 0.0f;
-                        }
-                    }
-                }
-                else
-                {
-                    // NOTE: Theta must be in the range [0, PG_PI]
-                    // Move cursor down, move camera up.
-                    if (mouse_cursor_delta.y > 0.0f)
-                    {
-                        app_state.camera.theta
-                            -= (PG_PI / 2.0f) * PG_CAMERA_ROTATION_RATE;
-                        if (app_state.camera.theta < 0.001f)
-                        {
-                            app_state.camera.theta = 0.001f;
-                        }
-                    }
-                    // Move cursor up, move camera down.
-                    if (mouse_cursor_delta.y < 0.0f)
-                    {
-                        app_state.camera.theta
-                            += (PG_PI / 2.0f) * PG_CAMERA_ROTATION_RATE;
-                        if (app_state.camera.theta > PG_PI - 0.001f)
-                        {
-                            app_state.camera.theta = PG_PI - 0.001f;
-                        }
-                    }
-                }
+                break;
+            }
+            case INPUT_EVENT_ROTATE_DOWN:
+            {
+                app_state.camera.theta
+                    += (PG_PI / 2.0f)
+                       * pg_f32_deg_to_rad(CAMERA_ROTATION_RATE * dt);
+                break;
+            }
+            case INPUT_EVENT_ROTATE_LEFT:
+            {
+                app_state.camera.phi
+                    += PG_PI * pg_f32_deg_to_rad(CAMERA_ROTATION_RATE * dt);
+                break;
+            }
+            case INPUT_EVENT_ROTATE_RIGHT:
+            {
+                app_state.camera.phi
+                    -= PG_PI * pg_f32_deg_to_rad(CAMERA_ROTATION_RATE * dt);
+                break;
+            }
+            case INPUT_EVENT_ROTATE_UP:
+            {
+                app_state.camera.theta
+                    -= (PG_PI / 2.0f)
+                       * pg_f32_deg_to_rad(CAMERA_ROTATION_RATE * dt);
+                break;
+            }
+            case INPUT_EVENT_ZOOM_IN:
+            {
+                app_state.camera.zoom += CAMERA_ZOOM_RATE * dt;
+                break;
+            }
+            case INPUT_EVENT_ZOOM_OUT:
+            {
+                app_state.camera.zoom -= CAMERA_ZOOM_RATE * dt;
+                break;
+            }
+            default:
+            {
+                err->log(err,
+                         PG_ERROR_MAJOR,
+                         "update_app: unexpected input event");
             }
         }
-        pg_f32_3x new_camera_position
-            = {.x = pg_f32_sin(app_state.camera.theta)
-                    * pg_f32_cos(app_state.camera.phi),
-               .y = pg_f32_cos(app_state.camera.theta),
-               .z = pg_f32_sin(app_state.camera.theta)
-                    * pg_f32_sin(app_state.camera.phi)};
-        app_state.camera.position
-            = pg_f32_3x_mul_scalar(new_camera_position, (f32)camera_zoom);
 
         if (app_state.auto_rotate)
         {
-            app_state.rotation.y += 0.5f;
+            app_state.rotation.y += MODEL_ROTATION_RATE * dt;
             if (app_state.rotation.y > 359.0f)
             {
                 app_state.rotation.y = 0.0f;
             }
         }
 
-        *running_time_step -= config.app_fixed_time_step;
+        *running_time_step -= dt;
     }
+
+    // Clamp camera x-rotation.
+    if (app_state.camera.phi < 0.0f)
+    {
+        app_state.camera.phi = (2.0f * PG_PI);
+    }
+    else if (app_state.camera.phi > (2.0f * PG_PI))
+    {
+        app_state.camera.phi = 0.0f;
+    }
+
+    // Clamp camera y-rotation.
+    if (app_state.camera.theta < 0.001f)
+    {
+        app_state.camera.theta = 0.001f;
+    }
+    else if (app_state.camera.theta > PG_PI - 0.001f)
+    {
+        app_state.camera.theta = PG_PI - 0.001f;
+    }
+
+    // Clamp camera zoom.
+    if (app_state.camera.zoom > CAMERA_MAX_ZOOM)
+    {
+        app_state.camera.zoom = CAMERA_MAX_ZOOM;
+    }
+    else if (app_state.camera.zoom < CAMERA_MIN_ZOOM)
+    {
+        app_state.camera.zoom = CAMERA_MIN_ZOOM;
+    }
+
+    // Calculate new camera position.
+    pg_f32_3x new_camera_position = {.x = pg_f32_sin(app_state.camera.theta)
+                                          * pg_f32_cos(app_state.camera.phi),
+                                     .y = pg_f32_cos(app_state.camera.theta),
+                                     .z = pg_f32_sin(app_state.camera.theta)
+                                          * pg_f32_sin(app_state.camera.phi)};
+    app_state.camera.position
+        = pg_f32_3x_mul_scalar(new_camera_position, app_state.camera.zoom);
 
     frame_data fd = {.projection_mtx = *projection_mtx,
                      .view_mtx = pg_f32_4x4_look_at(&app_state.camera),
@@ -450,9 +622,9 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                    &err);
 
         pg_windows_metrics_update(&windows, &err);
-        running_time_step += windows.metrics.frame_time;
         app_state.fps = windows.metrics.fps;
         app_state.frame_time = windows.metrics.frame_time;
+        running_time_step += windows.metrics.frame_time / PG_MS_IN_S;
 
         if (app_state.gfx_api != gfx_api)
         {
