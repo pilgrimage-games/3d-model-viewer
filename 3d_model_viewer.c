@@ -208,7 +208,8 @@ process_input(pg_input* input)
     // Mouse
     if (pg_button_pressed(&input->mouse.left,
                           app_state.frame_time,
-                          app_state.frame_time))
+                          app_state.frame_time)
+        && !(ImGui_GetIO()->WantCaptureMouse))
     {
         app_state.auto_rotate = false;
 
