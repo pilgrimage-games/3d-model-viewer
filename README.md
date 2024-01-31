@@ -27,8 +27,9 @@ download and run the application.
 * Physically Based Rendering (PBR) with support for albedo, metallic-roughness,
   normal, and emissive textures
 * Normal mapping
-* UI controls to live-switch graphics APIs, rotate the model, change the light
-  direction, etc.
+* Arcball camera (camera is rotated on a sphere around the model)
+* Mouse/keyboard and gamepad controls for model selection, rotation, zoom, etc.
+* UI for displaying model names, performance metrics, etc.
 
 ## Models
 The included 3D models are processed from their original glTF 2.0 binary format
