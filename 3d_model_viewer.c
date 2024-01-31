@@ -2,7 +2,9 @@
 #define PG_APP_GFX_API
 #define PG_APP_IMGUI
 
-#define DEFAULT_CAMERA_Z_POSITION 6.0f
+#define CAMERA_AUTO_ROTATION_RATE 30.0f    // degrees/sec
+#define CAMERA_MANUAL_ROTATION_RATE 180.0f // degrees/sec
+
 #define MAX_OBJECT_COUNT 1u
 
 #if defined(WINDOWS)
@@ -50,6 +52,7 @@ typedef struct
     u32 art_id;
     f32 fps;
     f32 frame_time;
+    f32 center_zoom;
     pg_gfx_api gfx_api;  // align: 4
     pg_f32_3x rotation;  // align: 4
     pg_f32_3x light_dir; // align: 4
@@ -57,29 +60,32 @@ typedef struct
     pg_assets assets;    // align: 8 (ptr)
 } application_state;
 
-GLOBAL pg_config config = {.gfx_force_widescreen = true,
+GLOBAL pg_config config = {.input_gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
-                           .app_fixed_time_step = (1.0f / 60.0f) * PG_MS_IN_S,
-                           .app_permanent_mem_size = 1u * PG_GIBIBYTE,
-                           .app_transient_mem_size = 1u * PG_KIBIBYTE,
+                           .fixed_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
+                           .permanent_mem_size = 1u * PG_GIBIBYTE,
+                           .transient_mem_size = 1u * PG_KIBIBYTE,
                            .gfx_mem_size = 50u * PG_KIBIBYTE};
 
 GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
        .gfx_api = PG_GFX_API_D3D12,
-       .light_dir = {.x = 0.0f, .y = 0.0f, .z = -1.0f},
-       .camera = {.position = {.z = DEFAULT_CAMERA_Z_POSITION},
-                  .up_axis = {.y = 1.0f}}};
+       .light_dir = {.x = -0.5f, .y = 0.0f, .z = -1.0f},
+       .camera = {.arcball = true, .up_axis = {.y = 1.0f}}};
 
 void
 reset_view(void)
 {
+    app_state.camera.position.x = PG_PI / 2.0f;
+    app_state.camera.position.y = PG_PI / 2.0f;
+    app_state.camera.position.z = 6.0f;
+    app_state.auto_rotate = true;
     switch (app_state.art_id)
     {
         case ART_MODEL_FTM:
         {
-            app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
+            app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 180.0f, .z = 0.0f};
             app_state.camera.position.z = 1.0f;
             break;
         }
@@ -87,17 +93,15 @@ reset_view(void)
         {
             app_state.rotation
                 = (pg_f32_3x){.x = 90.0f, .y = 0.0f, .z = 270.0f};
-            app_state.camera.position.z = DEFAULT_CAMERA_Z_POSITION;
             break;
         }
         default:
         {
             app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
-            app_state.camera.position.z = DEFAULT_CAMERA_Z_POSITION;
             break;
         }
     }
-    app_state.auto_rotate = true;
+    app_state.center_zoom = app_state.camera.position.z;
 }
 
 FUNCTION void
@@ -126,74 +130,23 @@ imgui_ui(void)
         }
     }
 
-    b8 model_controls_active
-        = ImGui_CollapsingHeader("Model Controls",
-                                 ImGuiTreeNodeFlags_DefaultOpen);
-    if (model_controls_active)
-    {
-        f32 x_rotation_rad = pg_f32_deg_to_rad(app_state.rotation.x);
-        ImGui_SliderAngleEx("X Rotation",
-                            &x_rotation_rad,
-                            0.0f,
-                            360.0f,
-                            "%.0f°",
-                            0);
-        app_state.rotation.x = pg_f32_rad_to_deg(x_rotation_rad);
-        if (ImGui_IsItemActive())
-        {
-            app_state.auto_rotate = false;
-        }
-
-        f32 y_rotation_rad = pg_f32_deg_to_rad(app_state.rotation.y);
-        ImGui_SliderAngleEx("Y Rotation",
-                            &y_rotation_rad,
-                            0.0f,
-                            360.0f,
-                            "%.0f°",
-                            0);
-        app_state.rotation.y = pg_f32_rad_to_deg(y_rotation_rad);
-        if (ImGui_IsItemActive())
-        {
-            app_state.auto_rotate = false;
-        }
-
-        f32 z_rotation_rad = pg_f32_deg_to_rad(app_state.rotation.z);
-        ImGui_SliderAngleEx("Z Rotation",
-                            &z_rotation_rad,
-                            0.0f,
-                            360.0f,
-                            "%.0f°",
-                            0);
-        app_state.rotation.z = pg_f32_rad_to_deg(z_rotation_rad);
-        if (ImGui_IsItemActive())
-        {
-            app_state.auto_rotate = false;
-        }
-
-        ImGui_Checkbox("Auto-Rotate", (bool*)&app_state.auto_rotate);
-    }
-
-    b8 camera_controls_active
-        = ImGui_CollapsingHeader("Camera Controls",
-                                 ImGuiTreeNodeFlags_DefaultOpen);
-    if (camera_controls_active)
-    {
-        ImGui_SliderFloat("Z Position (Zoom)",
-                          &app_state.camera.position.z,
-                          0.001f,
-                          DEFAULT_CAMERA_Z_POSITION * 2.0f);
-    }
-
     b8 lighting_controls_active
         = ImGui_CollapsingHeader("Lighting Controls",
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (lighting_controls_active)
     {
         ImGui_SliderFloat("X Direction", &app_state.light_dir.x, -1.0f, 1.0f);
-
         ImGui_SliderFloat("Y Direction", &app_state.light_dir.y, -1.0f, 1.0f);
-
         ImGui_SliderFloat("Z Direction", &app_state.light_dir.z, -1.0f, 1.0f);
+    }
+
+    b8 mouse_controls_active
+        = ImGui_CollapsingHeader("Mouse Controls",
+                                 ImGuiTreeNodeFlags_DefaultOpen);
+    if (mouse_controls_active)
+    {
+        ImGui_Text("[Left Click + Drag]: Rotate");
+        ImGui_Text("[Forward/Back]: Zoom In/Zoom Out");
     }
 
     b8 keyboard_controls_active
@@ -204,6 +157,17 @@ imgui_ui(void)
         ImGui_Text("[Left/Up]: Previous Model");
         ImGui_Text("[Right/Down]: Next Model");
         ImGui_Text("[Alt+Enter]: Toggle Fullscreen");
+    }
+
+    b8 gamepad_controls_active
+        = ImGui_CollapsingHeader("Gamepad Controls",
+                                 ImGuiTreeNodeFlags_DefaultOpen);
+    if (gamepad_controls_active)
+    {
+        ImGui_Text("[D-Pad Left/Up]: Previous Model");
+        ImGui_Text("[D-Pad Right/Down]: Next Model");
+        ImGui_Text("[Right Thumbstick]: Rotate");
+        ImGui_Text("[Right Trigger/Left Trigger]: Zoom In/Zoom Out");
     }
 #endif
 }
@@ -263,24 +227,24 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
         (*model_scaling)[i]
             = (pg_f32_3x){.x = norm_scale, .y = norm_scale, .z = norm_scale};
     }
+
+    reset_view();
 }
 
 FUNCTION void
 update_app(pg_input* input,
+           pg_f32_2x previous_cursor_position,
            pg_dynamic_cb_data* dynamic_cb_data,
            pg_f32_4x4* projection_mtx,
            pg_f32_3x* model_scaling,
-           f32 frame_time,
            f32* running_time_step,
            pg_error* err)
 {
     // Left/Up: Previous Model
-    if (pg_button_pressed(&input->kbd.left,
-                          config.input_repeat_rate,
-                          frame_time)
-        || pg_button_pressed(&input->kbd.up,
-                             config.input_repeat_rate,
-                             frame_time))
+    if (pg_button_pressed(&input->kbd.left, config.input_repeat_rate)
+        || pg_button_pressed(&input->kbd.up, config.input_repeat_rate)
+        || pg_button_pressed(&input->gp[0].left, config.input_repeat_rate)
+        || pg_button_pressed(&input->gp[0].up, config.input_repeat_rate))
     {
         if (app_state.art_id == 0)
         {
@@ -294,12 +258,10 @@ update_app(pg_input* input,
     }
 
     // Right/Down: Next Model
-    if (pg_button_pressed(&input->kbd.right,
-                          config.input_repeat_rate,
-                          frame_time)
-        || pg_button_pressed(&input->kbd.down,
-                             config.input_repeat_rate,
-                             frame_time))
+    if (pg_button_pressed(&input->kbd.right, config.input_repeat_rate)
+        || pg_button_pressed(&input->kbd.down, config.input_repeat_rate)
+        || pg_button_pressed(&input->gp[0].right, config.input_repeat_rate)
+        || pg_button_pressed(&input->gp[0].down, config.input_repeat_rate))
     {
         if (app_state.art_id == app_state.assets.art_count - 1)
         {
@@ -312,25 +274,73 @@ update_app(pg_input* input,
         reset_view();
     }
 
-    // Every fixed time step, update model rotation.
-    if (*running_time_step >= config.app_fixed_time_step)
+    pg_f32_2x cursor_delta = {0};
+    if (pg_button_pressed(&input->mouse.left, app_state.frame_time)
+        && !(ImGui_GetIO()->WantCaptureMouse))
     {
-        if (app_state.auto_rotate)
-        {
-            app_state.rotation.y += 0.5f;
-            if (app_state.rotation.y > 359.0f)
-            {
-                app_state.rotation.y = 0.0f;
-            }
-        }
-
-        *running_time_step -= config.app_fixed_time_step;
+        cursor_delta = pg_f32_2x_mul_scalar(
+            pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
+            100.0f);
     }
 
-    frame_data fd = {.projection_mtx = *projection_mtx,
-                     .view_mtx = pg_f32_4x4_look_at(&app_state.camera),
-                     .light_dir = app_state.light_dir,
-                     .camera_pos = app_state.camera.position};
+    if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
+        || input->gp[0].rs.x != 0.0f || input->gp[0].rs.y != 0.0f)
+    {
+        app_state.auto_rotate = false;
+    }
+
+    while (*running_time_step != 0.0f)
+    {
+        f32 dt = config.fixed_time_step;
+        if (*running_time_step < dt)
+        {
+            dt = *running_time_step;
+        }
+
+        // Rotate camera.
+        f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
+        f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
+        if (app_state.auto_rotate)
+        {
+            app_state.camera.position.x
+                += pg_f32_deg_to_rad(auto_rotation_rate * dt);
+        }
+        else
+        {
+            app_state.camera.position.x += pg_f32_deg_to_rad(
+                manual_rotation_rate * cursor_delta.x * dt);
+            app_state.camera.position.y += pg_f32_deg_to_rad(
+                manual_rotation_rate * cursor_delta.y * dt);
+            app_state.camera.position.x += pg_f32_deg_to_rad(
+                manual_rotation_rate * input->gp[0].rs.x * dt);
+            app_state.camera.position.y += pg_f32_deg_to_rad(
+                manual_rotation_rate * input->gp[0].rs.y * dt);
+        }
+
+        // Zoom camera.
+        f32 zoom_rate = app_state.center_zoom / 1000.0f;
+        app_state.camera.position.z
+            -= zoom_rate * (u8)input->mouse.forward.pressed * dt;
+        app_state.camera.position.z
+            += zoom_rate * (u8)input->mouse.back.pressed * dt;
+        app_state.camera.position.z -= zoom_rate * input->gp[0].rt * dt;
+        app_state.camera.position.z += zoom_rate * input->gp[0].lt * dt;
+
+        *running_time_step -= dt;
+    }
+
+    pg_camera_clamp(
+        (pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
+        (pg_f32_2x){.min = 0.0f, .max = PG_PI},
+        (pg_f32_2x){.min = 0.0f, .max = app_state.center_zoom * 2.0f},
+        true,
+        &app_state.camera);
+
+    frame_data fd
+        = {.projection_mtx = *projection_mtx,
+           .view_mtx = pg_f32_4x4_look_at(&app_state.camera),
+           .light_dir = app_state.light_dir,
+           .camera_pos = pg_camera_get_cartesian_position(&app_state.camera)};
     object_data od
         = {.model_mtx = pg_f32_4x4_place(model_scaling[app_state.art_id],
                                          app_state.rotation,
@@ -382,7 +392,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                              &err);
     pg_windows_metrics_init(&windows, &err);
 
-    f32 running_time_step = config.app_fixed_time_step;
+    f32 running_time_step = config.fixed_time_step;
     while (windows.msg.message != WM_QUIT)
     {
         if (PeekMessageW(&windows.msg, 0, 0, 0, PM_REMOVE))
@@ -393,14 +403,15 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         }
 
         pg_gfx_api gfx_api = app_state.gfx_api;
+        pg_f32_2x previous_cursor_position = windows.input.mouse.cursor;
 
         pg_windows_update_input(&windows, &config, &err);
 
         update_app(&windows.input,
+                   previous_cursor_position,
                    &dynamic_cb_data,
                    &projection_mtx,
                    model_scaling,
-                   windows.metrics.frame_time,
                    &running_time_step,
                    &err);
 
@@ -415,9 +426,9 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                    &err);
 
         pg_windows_metrics_update(&windows, &err);
-        running_time_step += windows.metrics.frame_time;
         app_state.fps = windows.metrics.fps;
         app_state.frame_time = windows.metrics.frame_time;
+        running_time_step += app_state.frame_time;
 
         if (app_state.gfx_api != gfx_api)
         {
