@@ -5,7 +5,7 @@
 #define CAMERA_AUTO_ROTATION_RATE 30.0f    // degrees/sec
 #define CAMERA_MANUAL_ROTATION_RATE 180.0f // degrees/sec
 
-#define MAX_OBJECT_COUNT 1u
+#define MAX_ENTITY_COUNT 1u
 
 #if defined(WINDOWS)
 #include <windows/pg_windows.h>
@@ -46,7 +46,7 @@ typedef struct
 {
     pg_f32_4x4 model_mtx;
     f32 padding_0[48];
-} art_data;
+} entity_data;
 
 typedef struct
 {
@@ -184,8 +184,8 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
     b8 ok = true;
 
     pg_dynamic_cb_data_create(sizeof(frame_data),
-                              sizeof(art_data),
-                              MAX_OBJECT_COUNT,
+                              sizeof(entity_data),
+                              MAX_ENTITY_COUNT,
                               permanent_mem,
                               dynamic_cb_data,
                               err);
@@ -349,17 +349,17 @@ update_app(pg_input* input,
                                           app_state.camera.up_axis),
            .light_dir = app_state.light_dir,
            .camera_pos = camera_position};
-    art_data ad
+    entity_data ed
         = {.model_mtx = pg_f32_4x4_place(model_scaling[app_state.art_id],
                                          app_state.rotation,
                                          (pg_f32_3x){0})};
-    pg_dynamic_cb_data_update(dynamic_cb_data, &fd, &ad, MAX_OBJECT_COUNT, err);
+    pg_dynamic_cb_data_update(dynamic_cb_data, &fd, &ed, MAX_ENTITY_COUNT, err);
 
     pg_assets_get_drawable_meshes(&app_state.art_id,
                                   1,
                                   &app_state.assets,
                                   &fd.view_mtx,
-                                  &ad.model_mtx,
+                                  &ed.model_mtx,
                                   transient_mem,
                                   meshes,
                                   mesh_count,
