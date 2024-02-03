@@ -11,7 +11,7 @@ cbuffer frame_data : register(b0)
     float3 camera_pos;
 }
 
-cbuffer object_data : register(b1)
+cbuffer art_data : register(b1)
 {
     float4x4 model_mtx;
 }

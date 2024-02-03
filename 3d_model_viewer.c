@@ -15,12 +15,15 @@ static_assert(0, "no supported platform is defined");
 
 typedef enum
 {
+    ART_MODEL_ALPHA_BLEND_TEST,
     ART_MODEL_BAKER_AND_THE_BRIDGE,
     ART_MODEL_CORSET,
     ART_MODEL_DAMAGED_HELMET,
     ART_MODEL_FTM,
+    ART_MODEL_HEARTPIECE,
     ART_MODEL_METAL_ROUGH_SPHERES,
     ART_MODEL_PLAYSTATION_1,
+    ART_MODEL_TEST_OPACITY_2,
     ART_MODEL_WATER_BOTTLE,
     ART_COUNT
 } asset_type_art;
@@ -43,7 +46,7 @@ typedef struct
 {
     pg_f32_4x4 model_mtx;
     f32 padding_0[48];
-} object_data;
+} art_data;
 
 typedef struct
 {
@@ -63,8 +66,8 @@ typedef struct
 GLOBAL pg_config config = {.input_gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
                            .fixed_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
-                           .permanent_mem_size = 1u * PG_GIBIBYTE,
-                           .transient_mem_size = 1u * PG_KIBIBYTE,
+                           .permanent_mem_size = 2u * PG_GIBIBYTE,
+                           .transient_mem_size = 100u * PG_KIBIBYTE,
                            .gfx_mem_size = 50u * PG_KIBIBYTE};
 
 GLOBAL application_state app_state
@@ -174,7 +177,6 @@ imgui_ui(void)
 
 FUNCTION void
 init_app(pg_dynamic_cb_data* dynamic_cb_data,
-         pg_f32_4x4* projection_mtx,
          pg_f32_3x** model_scaling,
          pg_arena* permanent_mem,
          pg_error* err)
@@ -182,12 +184,11 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
     b8 ok = true;
 
     pg_dynamic_cb_data_create(sizeof(frame_data),
-                              sizeof(object_data),
+                              sizeof(art_data),
                               MAX_OBJECT_COUNT,
                               permanent_mem,
                               dynamic_cb_data,
                               err);
-    *projection_mtx = pg_f32_4x4_perspective(27.0f, 16.0f / 9.0f, 0.1f, 100.0f);
 
     // Get normalized scaling for all models.
     ok = pg_arena_push(model_scaling,
@@ -234,9 +235,11 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
 FUNCTION void
 update_app(pg_input* input,
            pg_f32_2x previous_cursor_position,
+           pg_drawable_mesh** meshes,
+           u32* mesh_count,
            pg_dynamic_cb_data* dynamic_cb_data,
-           pg_f32_4x4* projection_mtx,
            pg_f32_3x* model_scaling,
+           pg_arena* transient_mem,
            f32* running_time_step,
            pg_error* err)
 {
@@ -335,17 +338,32 @@ update_app(pg_input* input,
         (pg_f32_2x){.min = 0.0f, .max = app_state.center_zoom * 2.0f},
         true,
         &app_state.camera);
+    pg_f32_3x camera_position
+        = pg_camera_get_cartesian_position(&app_state.camera);
 
     frame_data fd
-        = {.projection_mtx = *projection_mtx,
-           .view_mtx = pg_f32_4x4_look_at(&app_state.camera),
+        = {.projection_mtx
+           = pg_f32_4x4_perspective(27.0f, 16.0f / 9.0f, 0.1f, 100.0f),
+           .view_mtx = pg_f32_4x4_look_at(camera_position,
+                                          app_state.camera.focal_point,
+                                          app_state.camera.up_axis),
            .light_dir = app_state.light_dir,
-           .camera_pos = pg_camera_get_cartesian_position(&app_state.camera)};
-    object_data od
+           .camera_pos = camera_position};
+    art_data ad
         = {.model_mtx = pg_f32_4x4_place(model_scaling[app_state.art_id],
                                          app_state.rotation,
                                          (pg_f32_3x){0})};
-    pg_dynamic_cb_data_update(dynamic_cb_data, &fd, &od, MAX_OBJECT_COUNT, err);
+    pg_dynamic_cb_data_update(dynamic_cb_data, &fd, &ad, MAX_OBJECT_COUNT, err);
+
+    pg_assets_get_drawable_meshes(&app_state.art_id,
+                                  1,
+                                  &app_state.assets,
+                                  &fd.view_mtx,
+                                  &ad.model_mtx,
+                                  transient_mem,
+                                  meshes,
+                                  mesh_count,
+                                  err);
 }
 
 #if defined(WINDOWS)
@@ -361,8 +379,9 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         = {.log = &pg_windows_error_log, .write_file = &pg_windows_write_file};
 
     pg_dynamic_cb_data dynamic_cb_data = {0};
-    pg_f32_4x4 projection_mtx = {0};
     pg_f32_3x* model_scaling = 0;
+    pg_drawable_mesh* meshes = 0;
+    u32 mesh_count = 0;
 
     pg_windows_window_init(&windows, &config, inst, &err);
     pg_windows_init_mem(&windows, &config, &err);
@@ -377,11 +396,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                 "wWinMain: unexpected number of art assets");
     }
 
-    init_app(&dynamic_cb_data,
-             &projection_mtx,
-             &model_scaling,
-             &windows.permanent_mem,
-             &err);
+    init_app(&dynamic_cb_data, &model_scaling, &windows.permanent_mem, &err);
 
     pg_windows_init_graphics(&windows,
                              app_state.gfx_api,
@@ -409,17 +424,18 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         update_app(&windows.input,
                    previous_cursor_position,
+                   &meshes,
+                   &mesh_count,
                    &dynamic_cb_data,
-                   &projection_mtx,
                    model_scaling,
+                   &windows.transient_mem,
                    &running_time_step,
                    &err);
 
         pg_windows_update_graphics(&windows,
                                    app_state.gfx_api,
-                                   &app_state.assets,
-                                   &app_state.art_id,
-                                   MAX_OBJECT_COUNT,
+                                   meshes,
+                                   mesh_count,
                                    &dynamic_cb_data,
                                    app_state.vsync,
                                    &imgui_ui,
