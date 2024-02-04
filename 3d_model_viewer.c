@@ -28,16 +28,26 @@ typedef enum
     ART_COUNT
 } asset_type_art;
 
+GLOBAL c8* model_names[] = {"Alpha Blend Test",
+                            "Baker and the Bridge",
+                            "Corset",
+                            "Damaged Helmet",
+                            "Ftm",
+                            "Heartpiece",
+                            "Metal Rough Spheres",
+                            "PlayStation 1",
+                            "Test Opacity 2",
+                            "Water Bottle"};
+
 // NOTE: This represents constant buffer data so struct members must not cross
 // a 16-byte boundary and struct alignment must be to 256 bytes.
 typedef struct
 {
-    pg_f32_4x4 projection_mtx;
-    pg_f32_4x4 view_mtx;
+    pg_f32_4x4 projection_view_mtx;
     pg_f32_3x light_dir;
     f32 padding_0;
     pg_f32_3x camera_pos;
-    f32 padding_1[25];
+    f32 padding_1[41];
 } frame_data;
 
 // NOTE: This represents constant buffer data so struct members must not cross
@@ -80,10 +90,10 @@ GLOBAL application_state app_state
 void
 reset_view(void)
 {
-    app_state.camera.position.x = PG_PI / 2.0f;
-    app_state.camera.position.y = PG_PI / 2.0f;
-    app_state.camera.position.z = 6.0f;
     app_state.auto_rotate = true;
+    app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
+    app_state.camera.position
+        = (pg_f32_3x){.x = PG_PI / 2.0f, .y = PG_PI / 2.0f, .z = 6.0f};
     switch (app_state.art_id)
     {
         case ART_MODEL_FTM:
@@ -96,11 +106,6 @@ reset_view(void)
         {
             app_state.rotation
                 = (pg_f32_3x){.x = 90.0f, .y = 0.0f, .z = 270.0f};
-            break;
-        }
-        default:
-        {
-            app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
             break;
         }
     }
@@ -121,11 +126,9 @@ imgui_ui(void)
     if (model_selection_active)
     {
         u32 model_id = app_state.art_id;
-        for (u32 i = 0; i < app_state.assets.art_count; i += 1)
+        for (asset_type_art i = 0; i < ART_COUNT; i += 1)
         {
-            ImGui_RadioButtonIntPtr(app_state.assets.art[i].name,
-                                    (s32*)&app_state.art_id,
-                                    i);
+            ImGui_RadioButtonIntPtr(model_names[i], (s32*)&app_state.art_id, i);
         }
         if (app_state.art_id != model_id)
         {
@@ -193,7 +196,7 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
     // Get normalized scaling for all models.
     ok = pg_arena_push(model_scaling,
                        permanent_mem,
-                       app_state.assets.art_count * sizeof(pg_f32_3x),
+                       ART_COUNT * sizeof(pg_f32_3x),
                        alignof(pg_f32_3x));
     if (!ok)
     {
@@ -201,25 +204,31 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
                  PG_ERROR_MAJOR,
                  "init_app_state: failed to get memory for model scaling");
     }
-    for (u32 i = 0; i < app_state.assets.art_count; i += 1)
+    // TODO: DOD on positions?
+    for (u32 i = 0; i < ART_COUNT; i += 1)
     {
         f32 norm_scale = 0.0f;
-        for (u32 j = 0; j < app_state.assets.art[i].mesh_count; j += 1)
+        for (u32 j = 0; j < app_state.assets.mesh_count; j += 1)
         {
-            pg_mesh* mesh = &app_state.assets.art[i].meshes[j];
+            pg_mesh* mesh = &app_state.assets.meshes[j];
+            if (mesh->art_id != i)
+            {
+                continue;
+            }
+
             for (u32 k = 0; k < mesh->vertex_count; k += 1)
             {
                 pg_f32_3x position = mesh->vertices[k].position;
                 for (u32 l = 0; l < CAP(position.e); l += 1)
                 {
-                    f32 v = position.e[l];
-                    if (v > norm_scale)
+                    f32 p = position.e[l];
+                    if (p > norm_scale)
                     {
-                        norm_scale = v;
+                        norm_scale = p;
                     }
-                    if (-v > norm_scale)
+                    if (-p > norm_scale)
                     {
-                        norm_scale = -v;
+                        norm_scale = -p;
                     }
                 }
             }
@@ -266,7 +275,7 @@ update_app(pg_input* input,
         || pg_button_pressed(&input->gp[0].right, config.input_repeat_rate)
         || pg_button_pressed(&input->gp[0].down, config.input_repeat_rate))
     {
-        if (app_state.art_id == app_state.assets.art_count - 1)
+        if (app_state.art_id == ART_COUNT - 1)
         {
             app_state.art_id = 0;
         }
@@ -340,30 +349,32 @@ update_app(pg_input* input,
         &app_state.camera);
     pg_f32_3x camera_position
         = pg_camera_get_cartesian_position(&app_state.camera);
+    pg_f32_4x4 projection_mtx
+        = pg_f32_4x4_perspective(27.0f, 16.0f / 9.0f, 0.1f, 100.0f);
+    pg_f32_4x4 view_mtx = pg_f32_4x4_look_at(camera_position,
+                                             app_state.camera.focal_point,
+                                             app_state.camera.up_axis);
+    pg_f32_4x4 model_mtx = pg_f32_4x4_place(model_scaling[app_state.art_id],
+                                            app_state.rotation,
+                                            (pg_f32_3x){0});
+
+    pg_mesh_get_sorted_drawable_meshes(&app_state.art_id,
+                                       1,
+                                       app_state.assets.meshes,
+                                       app_state.assets.mesh_count,
+                                       &view_mtx,
+                                       &model_mtx,
+                                       transient_mem,
+                                       meshes,
+                                       mesh_count,
+                                       err);
 
     frame_data fd
-        = {.projection_mtx
-           = pg_f32_4x4_perspective(27.0f, 16.0f / 9.0f, 0.1f, 100.0f),
-           .view_mtx = pg_f32_4x4_look_at(camera_position,
-                                          app_state.camera.focal_point,
-                                          app_state.camera.up_axis),
+        = {.projection_view_mtx = pg_f32_4x4_mul(projection_mtx, view_mtx),
            .light_dir = app_state.light_dir,
            .camera_pos = camera_position};
-    entity_data ed
-        = {.model_mtx = pg_f32_4x4_place(model_scaling[app_state.art_id],
-                                         app_state.rotation,
-                                         (pg_f32_3x){0})};
+    entity_data ed = {.model_mtx = model_mtx};
     pg_dynamic_cb_data_update(dynamic_cb_data, &fd, &ed, MAX_ENTITY_COUNT, err);
-
-    pg_assets_get_drawable_meshes(&app_state.art_id,
-                                  1,
-                                  &app_state.assets,
-                                  &fd.view_mtx,
-                                  &ed.model_mtx,
-                                  transient_mem,
-                                  meshes,
-                                  mesh_count,
-                                  err);
 }
 
 #if defined(WINDOWS)
