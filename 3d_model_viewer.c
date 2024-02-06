@@ -15,38 +15,34 @@ static_assert(0, "no supported platform is defined");
 
 typedef enum
 {
-    ART_MODEL_ALPHA_BLEND_TEST,
     ART_MODEL_BAKER_AND_THE_BRIDGE,
     ART_MODEL_CORSET,
     ART_MODEL_DAMAGED_HELMET,
     ART_MODEL_FTM,
-    ART_MODEL_HEARTPIECE,
     ART_MODEL_METAL_ROUGH_SPHERES,
     ART_MODEL_PLAYSTATION_1,
-    ART_MODEL_TEST_OPACITY_2,
+    ART_MODEL_SHIP_IN_A_BOTTLE,
     ART_MODEL_WATER_BOTTLE,
     ART_COUNT
 } asset_type_art;
 
-GLOBAL c8* model_names[] = {"Alpha Blend Test",
-                            "Baker and the Bridge",
+GLOBAL c8* model_names[] = {"Baker and the Bridge",
                             "Corset",
                             "Damaged Helmet",
                             "Ftm",
-                            "Heartpiece",
                             "Metal Rough Spheres",
                             "PlayStation 1",
-                            "Test Opacity 2",
+                            "Ship in a Bottle",
                             "Water Bottle"};
 
 // NOTE: This represents constant buffer data so struct members must not cross
 // a 16-byte boundary and struct alignment must be to 256 bytes.
 typedef struct
 {
-    pg_f32_4x4 projection_view_mtx;
-    pg_f32_3x light_dir;
+    pg_f32_4x4 projection_view_mtx; // align: 4
+    pg_f32_3x light_dir;            // align: 4
     f32 padding_0;
-    pg_f32_3x camera_pos;
+    pg_f32_3x camera_pos; // align: 4
     f32 padding_1[41];
 } frame_data;
 
@@ -54,7 +50,7 @@ typedef struct
 // a 16-byte boundary and struct alignment must be to 256 bytes.
 typedef struct
 {
-    pg_f32_4x4 model_mtx;
+    pg_f32_4x4 model_mtx; // align: 4
     f32 padding_0[48];
 } entity_data;
 
@@ -76,9 +72,9 @@ typedef struct
 GLOBAL pg_config config = {.input_gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
                            .fixed_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
-                           .permanent_mem_size = 2u * PG_GIBIBYTE,
-                           .transient_mem_size = 100u * PG_KIBIBYTE,
-                           .gfx_mem_size = 50u * PG_KIBIBYTE};
+                           .permanent_mem_size = 1250u * PG_MEBIBYTE,
+                           .transient_mem_size = 50u * PG_KIBIBYTE,
+                           .gfx_mem_size = 15u * PG_KIBIBYTE};
 
 GLOBAL application_state app_state
     = {.vsync = true,
@@ -106,6 +102,20 @@ reset_view(void)
         {
             app_state.rotation
                 = (pg_f32_3x){.x = 90.0f, .y = 0.0f, .z = 270.0f};
+            break;
+        }
+        case ART_MODEL_SHIP_IN_A_BOTTLE:
+        {
+            app_state.camera.position = (pg_f32_3x){.x = (3.0f * PG_PI) / 2.0f,
+                                                    .y = PG_PI / 2.0f,
+                                                    .z = 6.0f};
+            break;
+        }
+        case ART_MODEL_WATER_BOTTLE:
+        {
+            app_state.camera.position = (pg_f32_3x){.x = (3.0f * PG_PI) / 2.0f,
+                                                    .y = PG_PI / 2.0f,
+                                                    .z = 6.0f};
             break;
         }
     }
@@ -244,8 +254,8 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
 FUNCTION void
 update_app(pg_input* input,
            pg_f32_2x previous_cursor_position,
-           pg_drawable_mesh** meshes,
-           u32* mesh_count,
+           pg_drawable_mesh** drawable_meshes,
+           u32* drawable_mesh_count,
            pg_dynamic_cb_data* dynamic_cb_data,
            pg_f32_3x* model_scaling,
            pg_arena* transient_mem,
@@ -365,8 +375,8 @@ update_app(pg_input* input,
                                        &view_mtx,
                                        &model_mtx,
                                        transient_mem,
-                                       meshes,
-                                       mesh_count,
+                                       drawable_meshes,
+                                       drawable_mesh_count,
                                        err);
 
     frame_data fd
@@ -391,8 +401,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
     pg_dynamic_cb_data dynamic_cb_data = {0};
     pg_f32_3x* model_scaling = 0;
-    pg_drawable_mesh* meshes = 0;
-    u32 mesh_count = 0;
+    pg_drawable_mesh* drawable_meshes = 0;
+    u32 drawable_mesh_count = 0;
 
     pg_windows_window_init(&windows, &config, inst, &err);
     pg_windows_init_mem(&windows, &config, &err);
@@ -435,8 +445,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         update_app(&windows.input,
                    previous_cursor_position,
-                   &meshes,
-                   &mesh_count,
+                   &drawable_meshes,
+                   &drawable_mesh_count,
                    &dynamic_cb_data,
                    model_scaling,
                    &windows.transient_mem,
@@ -445,8 +455,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         pg_windows_update_graphics(&windows,
                                    app_state.gfx_api,
-                                   meshes,
-                                   mesh_count,
+                                   drawable_meshes,
+                                   drawable_mesh_count,
                                    &dynamic_cb_data,
                                    app_state.vsync,
                                    &imgui_ui,

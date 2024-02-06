@@ -27,6 +27,7 @@ download and run the application.
 * Physically Based Rendering (PBR) with support for albedo, metallic-roughness,
   normal, and emissive textures
 * Normal mapping
+* Transparency and translucency
 * Arcball camera (camera is rotated on a sphere around the model)
 * Mouse/keyboard and gamepad controls for model selection, rotation, zoom, etc.
 * UI for displaying model names, performance metrics, etc.
@@ -42,5 +43,6 @@ The included 3D models are processed from their original glTF 2.0 binary format
 * "Ftm" by luyssport is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 * "Metal-Rough Spheres" by Ed Mackey is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 * "PlayStation 1" by Lars Maes is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+* "Ship in a Bottle" by Loic Norgeot is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
 * "Water Bottle" by Microsoft is Public Domain.
 
