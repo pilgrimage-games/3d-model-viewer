@@ -15,6 +15,7 @@ static_assert(0, "no supported platform is defined");
 
 typedef enum
 {
+    ART_NONE,
     ART_MODEL_BAKER_AND_THE_BRIDGE,
     ART_MODEL_CORSET,
     ART_MODEL_DAMAGED_HELMET,
@@ -26,7 +27,8 @@ typedef enum
     ART_COUNT
 } asset_type_art;
 
-GLOBAL c8* model_names[] = {"Baker and the Bridge",
+GLOBAL c8* model_names[] = {"None",
+                            "Baker and the Bridge",
                             "Corset",
                             "Damaged Helmet",
                             "Ftm",
@@ -79,6 +81,7 @@ GLOBAL pg_config config = {.input_gamepad_count = 1,
 GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
+       .art_id = 1,
        .gfx_api = PG_GFX_API_D3D12,
        .light_dir = {.x = -0.5f, .y = 0.0f, .z = -1.0f},
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}}};
@@ -136,7 +139,7 @@ imgui_ui(void)
     if (model_selection_active)
     {
         u32 model_id = app_state.art_id;
-        for (asset_type_art i = 0; i < ART_COUNT; i += 1)
+        for (asset_type_art i = 1; i < ART_COUNT; i += 1)
         {
             ImGui_RadioButtonIntPtr(model_names[i], (s32*)&app_state.art_id, i);
         }
@@ -214,7 +217,6 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
                  PG_ERROR_MAJOR,
                  "init_app_state: failed to get memory for model scaling");
     }
-    // TODO: DOD on positions?
     for (u32 i = 0; i < ART_COUNT; i += 1)
     {
         f32 norm_scale = 0.0f;
@@ -287,7 +289,7 @@ update_app(pg_input* input,
     {
         if (app_state.art_id == ART_COUNT - 1)
         {
-            app_state.art_id = 0;
+            app_state.art_id = 1;
         }
         else
         {
