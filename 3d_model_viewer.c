@@ -86,7 +86,7 @@ GLOBAL application_state app_state
        .light_dir = {.x = -0.5f, .y = 0.0f, .z = -1.0f},
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}}};
 
-void
+FUNCTION void
 reset_view(void)
 {
     app_state.auto_rotate = true;
@@ -270,7 +270,7 @@ update_app(pg_input* input,
         || pg_button_pressed(&input->gp[0].left, config.input_repeat_rate)
         || pg_button_pressed(&input->gp[0].up, config.input_repeat_rate))
     {
-        if (app_state.art_id == 0)
+        if (app_state.art_id == 1)
         {
             app_state.art_id = ART_COUNT - 1;
         }
@@ -370,16 +370,16 @@ update_app(pg_input* input,
                                             app_state.rotation,
                                             (pg_f32_3x){0});
 
-    pg_mesh_get_sorted_drawable_meshes(&app_state.art_id,
-                                       1,
-                                       app_state.assets.meshes,
-                                       app_state.assets.mesh_count,
-                                       &view_mtx,
-                                       &model_mtx,
-                                       transient_mem,
-                                       drawable_meshes,
-                                       drawable_mesh_count,
-                                       err);
+    pg_mesh_get_drawable_meshes(&app_state.art_id,
+                                1,
+                                app_state.assets.meshes,
+                                app_state.assets.mesh_count,
+                                &view_mtx,
+                                &model_mtx,
+                                transient_mem,
+                                drawable_meshes,
+                                drawable_mesh_count,
+                                err);
 
     frame_data fd
         = {.projection_view_mtx = pg_f32_4x4_mul(projection_mtx, view_mtx),
