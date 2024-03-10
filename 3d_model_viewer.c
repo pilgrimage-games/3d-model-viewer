@@ -1,5 +1,8 @@
 #define PG_APP_NAME "3D Model Viewer"
-#define PG_APP_GFX_API
+#define PG_APP_D3D11
+#define PG_APP_D3D12
+#define PG_APP_OPENGL
+#define PG_APP_VULKAN
 #define PG_APP_IMGUI
 
 #define CAMERA_AUTO_ROTATION_RATE 30.0f    // degrees/sec
@@ -68,7 +71,6 @@ typedef struct
     pg_f32_3x rotation;  // align: 4
     pg_f32_3x light_dir; // align: 4
     pg_camera camera;    // align: 4
-    pg_assets assets;    // align: 8 (ptr)
 } application_state;
 
 GLOBAL pg_config config = {.input_gamepad_count = 1,
@@ -76,7 +78,7 @@ GLOBAL pg_config config = {.input_gamepad_count = 1,
                            .fixed_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
                            .permanent_mem_size = 1250u * PG_MEBIBYTE,
                            .transient_mem_size = 50u * PG_KIBIBYTE,
-                           .gfx_mem_size = 15u * PG_KIBIBYTE};
+                           .gfx_mem_size = 50u * PG_KIBIBYTE};
 
 GLOBAL application_state app_state
     = {.vsync = true,
@@ -192,7 +194,8 @@ imgui_ui(void)
 }
 
 FUNCTION void
-init_app(pg_dynamic_cb_data* dynamic_cb_data,
+init_app(pg_assets* assets,
+         pg_dynamic_cb_data* dynamic_cb_data,
          pg_f32_3x** model_scaling,
          pg_arena* permanent_mem,
          pg_error* err)
@@ -206,31 +209,38 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
                               dynamic_cb_data,
                               err);
 
-    // Get normalized scaling for all models.
-    ok = pg_arena_push(model_scaling,
-                       permanent_mem,
-                       ART_COUNT * sizeof(pg_f32_3x),
-                       alignof(pg_f32_3x));
+    ok &= pg_arena_push(model_scaling,
+                        permanent_mem,
+                        assets->art_count * sizeof(pg_f32_3x),
+                        alignof(pg_f32_3x));
     if (!ok)
     {
         err->log(err,
                  PG_ERROR_MAJOR,
                  "init_app_state: failed to get memory for model scaling");
     }
-    for (u32 i = 0; i < ART_COUNT; i += 1)
+
+    // Get normalized scaling for all models.
+    for (u32 art_id = 0; art_id < assets->art_count; art_id += 1)
     {
         f32 norm_scale = 0.0f;
-        for (u32 j = 0; j < app_state.assets.mesh_count; j += 1)
-        {
-            pg_mesh* mesh = &app_state.assets.meshes[j];
-            if (mesh->art_id != i)
-            {
-                continue;
-            }
 
-            for (u32 k = 0; k < mesh->vertex_count; k += 1)
+        u32 mesh_offset = assets->mesh_offsets[art_id];
+        u32 next_mesh_offset = art_id < assets->art_count - 1
+                                   ? assets->mesh_offsets[art_id + 1]
+                                   : assets->mesh_count;
+        u32 art_mesh_count = next_mesh_offset - mesh_offset;
+        for (usize j = mesh_offset; j < mesh_offset + art_mesh_count; j += 1)
+        {
+            u32 vertex_offset = assets->vertex_offsets[j];
+            u32 next_vertex_offset = j < assets->mesh_count - 1
+                                         ? assets->vertex_offsets[j + 1]
+                                         : assets->vertex_count;
+            u32 mesh_vertex_count = next_vertex_offset - vertex_offset;
+            for (usize k = vertex_offset; k < vertex_offset + mesh_vertex_count;
+                 k += 1)
             {
-                pg_f32_3x position = mesh->vertices[k].position;
+                pg_f32_3x position = assets->vertices[k].position;
                 for (u32 l = 0; l < CAP(position.e); l += 1)
                 {
                     f32 p = position.e[l];
@@ -245,8 +255,9 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
                 }
             }
         }
+
         norm_scale = norm_scale != 0.0f ? 1.0f / norm_scale : 1.0f;
-        (*model_scaling)[i]
+        (*model_scaling)[art_id]
             = (pg_f32_3x){.x = norm_scale, .y = norm_scale, .z = norm_scale};
     }
 
@@ -254,10 +265,11 @@ init_app(pg_dynamic_cb_data* dynamic_cb_data,
 }
 
 FUNCTION void
-update_app(pg_input* input,
+update_app(pg_assets* assets,
+           pg_input* input,
            pg_f32_2x previous_cursor_position,
-           pg_drawable_mesh** drawable_meshes,
-           u32* drawable_mesh_count,
+           pg_mesh** meshes,
+           u32* mesh_count,
            pg_dynamic_cb_data* dynamic_cb_data,
            pg_f32_3x* model_scaling,
            pg_arena* transient_mem,
@@ -272,7 +284,7 @@ update_app(pg_input* input,
     {
         if (app_state.art_id == 1)
         {
-            app_state.art_id = ART_COUNT - 1;
+            app_state.art_id = assets->art_count - 1;
         }
         else
         {
@@ -287,7 +299,7 @@ update_app(pg_input* input,
         || pg_button_pressed(&input->gp[0].right, config.input_repeat_rate)
         || pg_button_pressed(&input->gp[0].down, config.input_repeat_rate))
     {
-        if (app_state.art_id == ART_COUNT - 1)
+        if (app_state.art_id == assets->art_count - 1)
         {
             app_state.art_id = 1;
         }
@@ -370,16 +382,15 @@ update_app(pg_input* input,
                                             app_state.rotation,
                                             (pg_f32_3x){0});
 
-    pg_mesh_get_drawable_meshes(&app_state.art_id,
-                                1,
-                                app_state.assets.meshes,
-                                app_state.assets.mesh_count,
-                                &view_mtx,
-                                &model_mtx,
-                                transient_mem,
-                                drawable_meshes,
-                                drawable_mesh_count,
-                                err);
+    pg_assets_get_meshes(assets,
+                         &app_state.art_id,
+                         1,
+                         &view_mtx,
+                         &model_mtx,
+                         transient_mem,
+                         meshes,
+                         mesh_count,
+                         err);
 
     frame_data fd
         = {.projection_view_mtx = pg_f32_4x4_mul(projection_mtx, view_mtx),
@@ -401,29 +412,34 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     pg_error err
         = {.log = &pg_windows_error_log, .write_file = &pg_windows_write_file};
 
+    pg_assets assets = {0};
     pg_dynamic_cb_data dynamic_cb_data = {0};
     pg_f32_3x* model_scaling = 0;
-    pg_drawable_mesh* drawable_meshes = 0;
-    u32 drawable_mesh_count = 0;
+    pg_mesh* meshes = 0;
+    u32 mesh_count = 0;
 
     pg_windows_window_init(&windows, &config, inst, &err);
     pg_windows_init_mem(&windows, &config, &err);
     pg_assets_read_pga(&windows.permanent_mem,
                        &pg_windows_read_file,
-                       &app_state.assets,
+                       &assets,
                        &err);
-    if (app_state.assets.art_count != ART_COUNT)
+    if (assets.art_count != ART_COUNT)
     {
         err.log(&err,
                 PG_ERROR_MAJOR,
                 "wWinMain: unexpected number of art assets");
     }
 
-    init_app(&dynamic_cb_data, &model_scaling, &windows.permanent_mem, &err);
+    init_app(&assets,
+             &dynamic_cb_data,
+             &model_scaling,
+             &windows.permanent_mem,
+             &err);
 
     pg_windows_init_graphics(&windows,
                              app_state.gfx_api,
-                             &app_state.assets,
+                             &assets,
                              &dynamic_cb_data,
                              app_state.vsync,
                              config.gfx_mem_size,
@@ -445,10 +461,11 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         pg_windows_update_input(&windows, &config, &err);
 
-        update_app(&windows.input,
+        update_app(&assets,
+                   &windows.input,
                    previous_cursor_position,
-                   &drawable_meshes,
-                   &drawable_mesh_count,
+                   &meshes,
+                   &mesh_count,
                    &dynamic_cb_data,
                    model_scaling,
                    &windows.transient_mem,
@@ -457,8 +474,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         pg_windows_update_graphics(&windows,
                                    app_state.gfx_api,
-                                   drawable_meshes,
-                                   drawable_mesh_count,
+                                   meshes,
+                                   mesh_count,
                                    &dynamic_cb_data,
                                    app_state.vsync,
                                    &imgui_ui,
@@ -475,7 +492,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                        &config,
                                        inst,
                                        app_state.gfx_api,
-                                       &app_state.assets,
+                                       &assets,
                                        &dynamic_cb_data,
                                        app_state.vsync,
                                        config.gfx_mem_size,
