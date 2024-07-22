@@ -86,8 +86,8 @@ float3 get_normal(ps_input i)
     // green on bottom = hole, green on top = bump
     float3 normal = tex[2].Sample(ss, i.tex_coord).rgb;
     normal = (normal * 2.0f) - 1.0f;
-    float3x3 tbn_mtx = transpose(float3x3(i.tangent, i.bitangent, i.normal));
-    normal = mul(tbn_mtx, normal);
+    float3x3 tbn = transpose(float3x3(i.tangent, i.bitangent, i.normal));
+    normal = mul(tbn, normal);
 
     // If normal mapping is disabled, use world-space vertex normal.
     normal = (normal * (int)normal_mapping) + (i.normal * (1 - (int)normal_mapping));

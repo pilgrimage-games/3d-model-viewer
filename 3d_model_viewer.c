@@ -44,8 +44,8 @@ GLOBAL c8* model_names[] = {"None",
 // a 16-byte boundary and struct alignment must be to 256 bytes.
 typedef struct
 {
-    pg_f32_4x4 projection_view_mtx; // align: 4
-    pg_f32_3x light_dir;            // align: 4
+    pg_f32_4x4 clip_from_world; // align: 4
+    pg_f32_3x light_dir;        // align: 4
     f32 padding_0;
     pg_f32_3x camera_pos; // align: 4
     f32 padding_1[41];
@@ -55,7 +55,7 @@ typedef struct
 // a 16-byte boundary and struct alignment must be to 256 bytes.
 typedef struct
 {
-    pg_f32_4x4 model_mtx; // align: 4
+    pg_f32_4x4 world_from_model; // align: 4
     f32 padding_0[48];
 } entity_data;
 
@@ -373,30 +373,36 @@ update_app(pg_assets* assets,
         &app_state.camera);
     pg_f32_3x camera_position
         = pg_camera_get_cartesian_position(&app_state.camera);
-    pg_f32_4x4 projection_mtx
-        = pg_f32_4x4_perspective(27.0f, 16.0f / 9.0f, 0.1f, 100.0f);
-    pg_f32_4x4 view_mtx = pg_f32_4x4_look_at(camera_position,
-                                             app_state.camera.focal_point,
-                                             app_state.camera.up_axis);
-    pg_f32_4x4 model_mtx = pg_f32_4x4_place(model_scaling[app_state.art_id],
-                                            app_state.rotation,
-                                            (pg_f32_3x){0});
+
+    pg_f32_4x4 world_from_model
+        = pg_f32_4x4_world_from_model(model_scaling[app_state.art_id],
+                                       app_state.rotation,
+                                       (pg_f32_3x){0});
+    pg_f32_4x4 view_from_world
+        = pg_f32_4x4_view_from_world(camera_position,
+                                     app_state.camera.focal_point,
+                                     app_state.camera.up_axis);
+    pg_f32_4x4 clip_from_view
+        = pg_f32_4x4_clip_from_view_perspective(27.0f,
+                                                16.0f / 9.0f,
+                                                0.1f,
+                                                100.0f);
 
     pg_assets_get_meshes(assets,
                          &app_state.art_id,
                          1,
-                         &view_mtx,
-                         &model_mtx,
+                         &view_from_world,
+                         &world_from_model,
                          transient_mem,
                          meshes,
                          mesh_count,
                          err);
 
     frame_data fd
-        = {.projection_view_mtx = pg_f32_4x4_mul(projection_mtx, view_mtx),
+        = {.clip_from_world = pg_f32_4x4_mul(clip_from_view, view_from_world),
            .light_dir = app_state.light_dir,
            .camera_pos = camera_position};
-    entity_data ed = {.model_mtx = model_mtx};
+    entity_data ed = {.world_from_model = world_from_model};
     pg_dynamic_cb_data_update(dynamic_cb_data, &fd, &ed, MAX_ENTITY_COUNT, err);
 }
 
