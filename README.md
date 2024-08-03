@@ -31,6 +31,7 @@ download and run the application.
 * Arcball camera (camera is rotated on a sphere around the model)
 * Mouse/keyboard and gamepad controls for model selection, rotation, zoom, etc.
 * UI for displaying model names, performance metrics, etc.
+* Ultrawide support
 
 ## Models
 The included 3D models are processed from their original glTF 2.0 binary format

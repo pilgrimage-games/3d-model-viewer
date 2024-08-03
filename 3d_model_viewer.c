@@ -268,6 +268,7 @@ FUNCTION void
 update_app(pg_assets* assets,
            pg_input* input,
            pg_f32_2x previous_cursor_position,
+           pg_f32_2x render_res,
            pg_mesh** meshes,
            u32* mesh_count,
            pg_dynamic_cb_data* dynamic_cb_data,
@@ -376,17 +377,17 @@ update_app(pg_assets* assets,
 
     pg_f32_4x4 world_from_model
         = pg_f32_4x4_world_from_model(model_scaling[app_state.art_id],
-                                       app_state.rotation,
-                                       (pg_f32_3x){0});
+                                      app_state.rotation,
+                                      (pg_f32_3x){0});
     pg_f32_4x4 view_from_world
         = pg_f32_4x4_view_from_world(camera_position,
                                      app_state.camera.focal_point,
                                      app_state.camera.up_axis);
-    pg_f32_4x4 clip_from_view
-        = pg_f32_4x4_clip_from_view_perspective(27.0f,
-                                                16.0f / 9.0f,
-                                                0.1f,
-                                                100.0f);
+    pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
+        27.0f,
+        render_res.width / render_res.height,
+        0.1f,
+        100.0f);
 
     pg_assets_get_meshes(assets,
                          &app_state.art_id,
@@ -470,6 +471,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         update_app(&assets,
                    &windows.input,
                    previous_cursor_position,
+                   windows.window.render_res,
                    &meshes,
                    &mesh_count,
                    &dynamic_cb_data,
