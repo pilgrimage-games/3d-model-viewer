@@ -22,7 +22,7 @@ download and run the application.
 * Supports various graphics APIs:
     * Direct3D 11
     * Direct3D 12
-    * OpenGL (may experience issues on Intel integrated graphics)
+    * OpenGL (may experience driver issues on Intel graphics)
     * Vulkan
 * Physically Based Rendering (PBR) with support for albedo, metallic-roughness,
   normal, and emissive textures
@@ -31,6 +31,7 @@ download and run the application.
 * Arcball camera (camera is rotated on a sphere around the model)
 * Mouse/keyboard and gamepad controls for model selection, rotation, zoom, etc.
 * UI for displaying model names, performance metrics, etc.
+* Ultrawide support
 
 ## Models
 The included 3D models are processed from their original glTF 2.0 binary format
