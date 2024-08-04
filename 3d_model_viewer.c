@@ -425,8 +425,15 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     pg_mesh* meshes = 0;
     u32 mesh_count = 0;
 
-    pg_windows_window_init(&windows, &config, inst, &err);
-    pg_windows_init_mem(&windows, &config, &err);
+    pg_windows_window_init(&windows.window,
+                           inst,
+                           config.fixed_aspect_ratio_width,
+                           config.fixed_aspect_ratio_height,
+                           &err);
+    pg_windows_init_mem(&windows,
+                        config.permanent_mem_size,
+                        config.transient_mem_size,
+                        &err);
     pg_assets_read_pga(&windows.permanent_mem,
                        &pg_windows_read_file,
                        &assets,
@@ -451,7 +458,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                              app_state.vsync,
                              config.gfx_mem_size,
                              &err);
-    pg_windows_metrics_init(&windows, &err);
+    pg_windows_metrics_init(&windows.metrics, &err);
 
     f32 running_time_step = config.fixed_time_step;
     while (windows.msg.message != WM_QUIT)
@@ -466,7 +473,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         pg_gfx_api gfx_api = app_state.gfx_api;
         pg_f32_2x previous_cursor_position = windows.input.mouse.cursor;
 
-        pg_windows_update_input(&windows, &config, &err);
+        pg_windows_update_input(&windows, config.gamepad_count, &err);
 
         update_app(&assets,
                    &windows.input,
@@ -489,7 +496,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                    &imgui_ui,
                                    &err);
 
-        pg_windows_metrics_update(&windows, &err);
+        pg_windows_metrics_update(&windows.metrics, &err);
         app_state.fps = windows.metrics.fps;
         app_state.frame_time = windows.metrics.frame_time;
         running_time_step += app_state.frame_time;
@@ -497,8 +504,9 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         if (app_state.gfx_api != gfx_api)
         {
             pg_windows_reload_graphics(&windows,
-                                       &config,
                                        inst,
+                                       config.fixed_aspect_ratio_width,
+                                       config.fixed_aspect_ratio_height,
                                        app_state.gfx_api,
                                        &assets,
                                        &dynamic_cb_data,
