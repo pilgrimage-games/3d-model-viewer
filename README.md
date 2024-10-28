@@ -23,7 +23,7 @@ download and run the application.
     * Direct3D 11
     * Direct3D 12
     * OpenGL (may experience driver issues on Intel graphics)
-    * Vulkan
+    * Vulkan (may experience driver issues on Intel graphics)
 * Physically Based Rendering (PBR) with support for albedo, metallic-roughness,
   normal, and emissive textures
 * Normal mapping
@@ -45,5 +45,5 @@ The included 3D models are processed from their original glTF 2.0 binary format
 * "Metal-Rough Spheres" by Ed Mackey is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 * "PlayStation 1" by Lars Maes is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 * "Ship in a Bottle" by Loic Norgeot is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
-* "Water Bottle" by Microsoft is Public Domain.
+* "Water Bottle" by Microsoft is Public Domain.
 

@@ -53,8 +53,11 @@ if defined release (
 ) else (
     rem -MTd: Statically link debug MSVC CRT
     rem -sdl: Enable additional security checks
+    rem -wd4100: Disable "unreferenced formal parameter" warning
+    rem -wd4189: Disable "local variable initialized but not referenced" warning
     rem -fsanitize: Enable address sanitizer
-    set cl_flags=!cl_flags! -DDEBUG -MTd -sdl -fsanitize=address
+    set cl_flags=!cl_flags! -DDEBUG -MTd -sdl -wd4100 -wd4189
+    set cl_flags=!cl_flags! -fsanitize=address
 )
 rem -DEBUG: Generate full debug info
 rem -INCREMENTAL: Disable incremental linking
@@ -84,42 +87,50 @@ if defined all (
     set fxc_flags=-Zpr -Ges
     if defined release (
         rem -O3: Enable optimizations
+        rem -all_resources_bound: Optimize out unbound resource checks
         rem -Qstrip_debug: Strip debug data
         rem -Qstrip_priv: Strip private data
         rem -Qstrip_reflect: Strip reflection data
-        set fxc_flags=!fxc_flags! -O3 -Qstrip_debug -Qstrip_priv -Qstrip_reflect
+        set fxc_flags=!fxc_flags! -O3 -all_resources_bound -Qstrip_debug -Qstrip_priv -Qstrip_reflect
     ) else (
         rem -Od: Disable optimizations
         rem -Zi: Enable debug info
         set fxc_flags=!fxc_flags! -Od -Zi
     )
+    rem -E: Set entrypoint name
     rem -T: Set shader target profile
     rem -Fo: Set output file path
-    fxc vs.hlsl !fxc_flags! -T vs_5_0 -Fo build\shaders\d3d11_vs.dxbc > nul
-    fxc ps.hlsl !fxc_flags! -T ps_5_0 -Fo build\shaders\d3d11_ps.dxbc > nul
-    fxc vs.hlsl !fxc_flags! -T vs_5_1 -Fo build\shaders\d3d12_vs.dxbc > nul
-    fxc ps.hlsl !fxc_flags! -T ps_5_1 -Fo build\shaders\d3d12_ps.dxbc > nul
+    fxc shaders.hlsl !fxc_flags! -E vs -T vs_5_0 -Fo build\shaders\d3d11_vs.dxbc > nul
+    fxc shaders.hlsl !fxc_flags! -E ps -T ps_5_0 -Fo build\shaders\d3d11_ps.dxbc > nul
+    fxc shaders.hlsl !fxc_flags! -E vs -T vs_5_1 -Fo build\shaders\d3d12_vs.dxbc > nul
+    fxc shaders.hlsl !fxc_flags! -E ps -T ps_5_1 -Fo build\shaders\d3d12_ps.dxbc > nul
 
     rem -Zpr: Pack matrices in row-major
     rem -Ges: Enable strict mode
     rem -spirv: Output SPIR-V (OpenGL/Vulkan)
-    set dxc_flags=-Zpr -Ges -spirv
+    rem -fvk-use-dx-layout: Use DirectX packing rules for uniform and storage buffers
+    set dxc_flags=-Zpr -Ges -spirv -fvk-use-dx-layout
     if defined release (
         rem -O3: Enable optimizations
+        rem -all-resources-bound: Optimize out unbound resource checks
         rem -Qstrip_debug: Strip debug data
         rem -Qstrip_priv: Strip private data
         rem -Qstrip_reflect: Strip reflection data (NOTE: not supported with -spirv)
-        set dxc_flags=!dxc_flags! -O3 -Qstrip_debug -Qstrip_priv
+        set dxc_flags=!dxc_flags! -O3 -all-resources-bound -Qstrip_debug -Qstrip_priv
     ) else (
         rem -Od: Disable optimizations
         rem -Zi: Enable debug info
-        set dxc_flags=!dxc_flags! -Od -Zi
+        rem -fspv-debug=vulkan-with-source: Enable source-level debugging
+        set dxc_flags=!dxc_flags! -Od -Zi -fspv-debug=vulkan-with-source
     )
-    rem -vkbr a b c d: Assign HLSL register (a) in space (b) to binding (c) in descriptor set (d) (Vulkan)
-    !dxc! vs.hlsl !dxc_flags! -T vs_6_0 -Fo build\shaders\gl_vs.spv
-    !dxc! ps.hlsl !dxc_flags! -T ps_6_0 -Fo build\shaders\gl_ps.spv
-    !dxc! vs.hlsl !dxc_flags! -T vs_6_0 -Fo build\shaders\vk_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 0 1
-    !dxc! ps.hlsl !dxc_flags! -T ps_6_0 -Fo build\shaders\vk_ps.spv -vkbr b2 0 0 2 -vkbr t0 0 1 2 -vkbr s0 0 1 2
+    rem -E: Set entrypoint name
+    rem -T: Set shader target profile
+    rem -Fo: Set output file path
+    rem -vkbr a b c d: Assign HLSL register (a) in space (b) to binding (c) in descriptor set (d)
+    !dxc! shaders.hlsl !dxc_flags! -E vs -T vs_6_0 -Fo build\shaders\gl_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr b2 0 2 0 -vkbr t0 0 0 0 -vkbr t1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr s0 0 3 0
+    !dxc! shaders.hlsl !dxc_flags! -E ps -T ps_6_0 -Fo build\shaders\gl_ps.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr b2 0 2 0 -vkbr t0 0 0 0 -vkbr t1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr s0 0 3 0
+    !dxc! shaders.hlsl !dxc_flags! -E vs -T vs_6_0 -Fo build\shaders\vk_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr b2 0 2 0 -vkbr t0 0 3 0 -vkbr t1 0 4 0 -vkbr t2 0 5 0 -vkbr t3 0 6 0 -vkbr s0 0 7 0
+    !dxc! shaders.hlsl !dxc_flags! -E ps -T ps_6_0 -Fo build\shaders\vk_ps.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr b2 0 2 0 -vkbr t0 0 3 0 -vkbr t1 0 4 0 -vkbr t2 0 5 0 -vkbr t3 0 6 0 -vkbr s0 0 7 0
 
     rem Asset Compilation
     asset_compiler

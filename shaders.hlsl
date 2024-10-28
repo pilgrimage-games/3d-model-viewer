@@ -1,18 +1,16 @@
 #define PI 3.14159265359f
-#define TEXTURE_COUNT 4
 
-cbuffer material_properties : register(b2)
+struct vertex
 {
-    bool normal_mapping;
-    int alpha_mode;
-    float alpha_cutoff;
-    float metallic_factor;
-    float roughness_factor;
-    float4 base_color_factor;
-}
+    float3 position;
+    float2 tex_coord;
+    float3 normal;
+    float4 tangent;
+};
 
-struct ps_input
+struct pixel
 {
+    uint material_id : MATERIAL_ID;
     float4 position : SV_POSITION; // clip space
     float2 tex_coord : TEXCOORD;   // texture space
     float3 normal : NORMAL;        // world space
@@ -22,8 +20,68 @@ struct ps_input
     float3 view_dir : POSITION1;   // world space (towards target)
 };
 
-Texture2D tex[TEXTURE_COUNT] : TEXTURE : register(t0);
+struct material_properties
+{
+    uint normal_mapping;
+    float alpha_cutoff;
+    float metallic_factor;
+    float roughness_factor;
+    uint alpha_mode;
+    float4 base_color_factor;
+};
+
+// Vertex Shader Resources
+cbuffer per_frame : register(b0)
+{
+    float4x4 clip_from_world;
+    float3 light_dir;
+    float3 camera_pos;
+}
+cbuffer per_model : register(b1)
+{
+    float4x4 world_from_model;
+}
+cbuffer per_mesh : register(b2)
+{
+    uint material_id;
+}
+StructuredBuffer<vertex> vertices : register(t0);
+StructuredBuffer<uint> indices : register(t1);
+
+// Pixel Shader Resources
+StructuredBuffer<material_properties> properties : register(t2);
+Texture2D textures[4] : TEXTURE : register(t3);
 SamplerState ss : SAMPLER : register(s0);
+
+pixel vs(uint index_id : SV_VertexID)
+{
+    uint vertex_id = indices[index_id];
+    vertex v = vertices[vertex_id];
+
+    pixel p;
+    p.material_id = material_id;
+    p.position = mul(clip_from_world, mul(world_from_model, float4(v.position, 1.0f)));
+
+    p.tex_coord = v.tex_coord;
+
+    // NOTE: Translation is ignored by casting to a 3x3 matrix.
+    // NOTE: This assumes uniform scaling. For non-uniform scaling, use the
+    // inverse transpose to undo the model matrix's scale transform but
+    // preserve its rotation.
+    p.normal = normalize(mul((float3x3)world_from_model, v.normal));
+    p.tangent = normalize(mul((float3x3)world_from_model, v.tangent.xyz));
+
+    // Reorthogonalize tangent with respect to normal using Gram-Schmidt
+    p.tangent = normalize(p.tangent - (dot(p.tangent, p.normal) * p.normal));
+
+    p.bitangent = normalize(mul(cross(p.normal, p.tangent), v.tangent.w));
+
+    p.light_dir = light_dir;
+
+    p.view_dir = (float3)mul(world_from_model, float4(v.position, 1.0f)) - camera_pos;
+
+    return p;
+}
 
 // Fresnel Reflectance using Schlick approximation
 // The fresnel equation approximates the percentage of light reflected.
@@ -63,56 +121,58 @@ float geometry_smith(float n_dot_l, float n_dot_v, float roughness)
 }
 
 // NOTE: pg_alpha_mode values: PG_AM_OPAQUE (0), PG_AM_MASK (1), PG_AM_BLEND (2)
-float4 get_albedo(ps_input i)
+float4 get_albedo(pixel p, material_properties mp)
 {
-    float4 albedo = tex[0].Sample(ss, i.tex_coord) * base_color_factor;
+    float4 albedo = textures[0].Sample(ss, p.tex_coord) * mp.base_color_factor;
 
-    if (alpha_mode == 1 && albedo.a < alpha_cutoff)
+    if (mp.alpha_mode == 1 && albedo.a < mp.alpha_cutoff)
     {
         discard;
     }
 
-    bool has_alpha = max(alpha_mode, 1) - 1;
-    albedo.a = (albedo.a * (int)has_alpha) + (1.0f * (1 - (int)has_alpha));
+    uint has_alpha = max(mp.alpha_mode, 1) - 1;
+    albedo.a = (albedo.a * has_alpha) + (1.0f * (1 - has_alpha));
 
     return albedo;
 }
 
-float3 get_normal(ps_input i)
+float3 get_normal(pixel p, material_properties mp)
 {
     // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed from
     // tangent space to world space.
     // NOTE: glTF normal maps are +Y/Green-up.
     // green on bottom = hole, green on top = bump
-    float3 normal = tex[2].Sample(ss, i.tex_coord).rgb;
+    float3 normal = textures[2].Sample(ss, p.tex_coord).rgb;
     normal = (normal * 2.0f) - 1.0f;
-    float3x3 tbn = transpose(float3x3(i.tangent, i.bitangent, i.normal));
+    float3x3 tbn = transpose(float3x3(p.tangent, p.bitangent, p.normal));
     normal = mul(tbn, normal);
 
     // If normal mapping is disabled, use world-space vertex normal.
-    normal = (normal * (int)normal_mapping) + (i.normal * (1 - (int)normal_mapping));
+    normal = (normal * mp.normal_mapping) + (p.normal * (1 - mp.normal_mapping));
 
     return normal;
 }
 
-float4 main(ps_input i) : SV_TARGET
+float4 ps(pixel p) : SV_TARGET
 {
+    material_properties mp = properties[p.material_id];
+
     // Sample textures.
-    float4 albedo = get_albedo(i);
-    float roughness = tex[1].Sample(ss, i.tex_coord).g * roughness_factor;
-    float metallic = tex[1].Sample(ss, i.tex_coord).b * metallic_factor;
-    float3 normal = get_normal(i);
-    float3 emissive = tex[3].Sample(ss, i.tex_coord).rgb;
+    float4 albedo = get_albedo(p, mp);
+    float roughness = textures[1].Sample(ss, p.tex_coord).g * mp.roughness_factor;
+    float metallic = textures[1].Sample(ss, p.tex_coord).b * mp.metallic_factor;
+    float3 normal = get_normal(p, mp);
+    float3 emissive = textures[3].Sample(ss, p.tex_coord).rgb;
 
     // Microfacet BRDF using Cook-Torrance model
     // The bidirectional reflective distribution function (BRDF) is the
     // approximation of the light reflected off a surface given its material
     // properties.
     // NOTE: `f0` is the base reflectivity when looking directly at the surface
-    // (i.e. 0 degree angle between `n` and `v`).
+    // (p.e. 0 degree angle between `n` and `v`).
     float3 n = normalize(normal);
-    float3 l = normalize(-i.light_dir);
-    float3 v = normalize(-i.view_dir);
+    float3 l = normalize(-p.light_dir);
+    float3 v = normalize(-p.view_dir);
     float3 h = normalize(l + v);
     float n_dot_v = max(0.0f, dot(n, v));
     float n_dot_l = max(0.0f, dot(n, l));
