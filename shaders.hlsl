@@ -1,23 +1,38 @@
 #define PI 3.14159265359f
 
+#if defined(D3D11)
+#define CONSTANT_BUFFER(type, name, reg)                                       \
+    cbuffer sm50_##name : register(reg)                                        \
+    {                                                                          \
+        type name;                                                             \
+    }
+#else
+#define CONSTANT_BUFFER(type, name, reg)                                       \
+    ConstantBuffer<type> name : register(reg)
+#endif
+
+struct frame_data
+{
+    float4x4 world_from_model;
+    float4x4 clip_from_world;
+    float3 light_dir;
+    float3 camera_pos;
+};
+
+struct constants
+{
+    uint material_id;
+    uint texture_offset;
+    uint vertex_offset;
+    uint index_offset;
+};
+
 struct vertex
 {
     float3 position;
     float2 tex_coord;
     float3 normal;
     float4 tangent;
-};
-
-struct pixel
-{
-    uint material_id : MATERIAL_ID;
-    float2 tex_coord : TEX_COORD;  // texture space
-    float3 normal : NORMAL;        // world space
-    float3 tangent : TANGENT;      // world space
-    float3 bitangent : BITANGENT;  // world space
-    float3 light_dir : POSITION0;  // world space (towards target)
-    float3 view_dir : POSITION1;   // world space (towards target)
-    float4 position : SV_POSITION; // clip space
 };
 
 struct material_properties
@@ -30,39 +45,46 @@ struct material_properties
     float4 base_color_factor;
 };
 
+struct pixel
+{
+    float2 tex_coord : TEX_COORD;  // texture space
+    float3 normal : NORMAL;        // world space
+    float3 tangent : TANGENT;      // world space
+    float3 bitangent : BITANGENT;  // world space
+    float3 light_dir : POSITION0;  // world space (towards target)
+    float3 view_dir : POSITION1;   // world space (towards target)
+    float4 position : SV_POSITION; // clip space
+};
+
 // Vertex Shader Resources
-cbuffer per_frame : register(b0)
-{
-    float4x4 clip_from_world;
-    float3 light_dir;
-    float3 camera_pos;
-}
-cbuffer per_model : register(b1)
-{
-    float4x4 world_from_model;
-}
-cbuffer per_mesh : register(b2)
-{
-    uint material_id;
-}
+CONSTANT_BUFFER(frame_data, per_frame, b1);
 StructuredBuffer<vertex> vertices : register(t0);
 StructuredBuffer<uint> indices : register(t1);
 
 // Pixel Shader Resources
 StructuredBuffer<material_properties> properties : register(t2);
+#if defined(D3D12) || defined(VULKAN)
+Texture2D textures[] : TEXTURE : register(t3, space1);
+#else
 Texture2D textures[4] : TEXTURE : register(t3);
+#endif
 SamplerState ss : SAMPLER : register(s0);
+
+// Shared Resources
+#if defined(VULKAN)
+[[vk::push_constant]]
+#endif
+CONSTANT_BUFFER(constants, per_draw, b0);
 
 pixel
 vs(uint index_id : SV_VertexID)
 {
-    uint vertex_id = indices[index_id];
-    vertex v = vertices[vertex_id];
+    uint vertex_id = indices[per_draw.index_offset + index_id];
+    vertex v = vertices[per_draw.vertex_offset + vertex_id];
 
     pixel p;
-    p.material_id = material_id;
-    p.position
-        = mul(clip_from_world, mul(world_from_model, float4(v.position, 1.0f)));
+    p.position = mul(per_frame.clip_from_world,
+                     mul(per_frame.world_from_model, float4(v.position, 1.0f)));
 
     p.tex_coord = v.tex_coord;
 
@@ -70,18 +92,20 @@ vs(uint index_id : SV_VertexID)
     // NOTE: This assumes uniform scaling. For non-uniform scaling, use the
     // inverse transpose to undo the model matrix's scale transform but
     // preserve its rotation.
-    p.normal = normalize(mul((float3x3)world_from_model, v.normal));
-    p.tangent = normalize(mul((float3x3)world_from_model, v.tangent.xyz));
+    p.normal = normalize(mul((float3x3)per_frame.world_from_model, v.normal));
+    p.tangent
+        = normalize(mul((float3x3)per_frame.world_from_model, v.tangent.xyz));
 
     // Reorthogonalize tangent with respect to normal using Gram-Schmidt
     p.tangent = normalize(p.tangent - (dot(p.tangent, p.normal) * p.normal));
 
     p.bitangent = normalize(mul(cross(p.normal, p.tangent), v.tangent.w));
 
-    p.light_dir = light_dir;
+    p.light_dir = per_frame.light_dir;
 
     p.view_dir
-        = (float3)mul(world_from_model, float4(v.position, 1.0f)) - camera_pos;
+        = (float3)mul(per_frame.world_from_model, float4(v.position, 1.0f))
+          - per_frame.camera_pos;
 
     return p;
 }
@@ -129,9 +153,10 @@ geometry_smith(float n_dot_l, float n_dot_v, float roughness)
 
 // NOTE: pg_alpha_mode values: PG_AM_OPAQUE (0), PG_AM_MASK (1), PG_AM_BLEND (2)
 float4
-get_albedo(pixel p, material_properties mp)
+get_albedo(pixel p, uint tex_offset, material_properties mp)
 {
-    float4 albedo = textures[0].Sample(ss, p.tex_coord) * mp.base_color_factor;
+    float4 albedo = textures[tex_offset + 0].Sample(ss, p.tex_coord)
+                    * mp.base_color_factor;
 
     if (mp.alpha_mode == 1 && albedo.a < mp.alpha_cutoff)
     {
@@ -145,13 +170,13 @@ get_albedo(pixel p, material_properties mp)
 }
 
 float3
-get_normal(pixel p, material_properties mp)
+get_normal(pixel p, uint tex_offset, material_properties mp)
 {
     // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed from
     // tangent space to world space.
     // NOTE: glTF normal maps are +Y/Green-up.
     // green on bottom = hole, green on top = bump
-    float3 normal = textures[2].Sample(ss, p.tex_coord).rgb;
+    float3 normal = textures[tex_offset + 2].Sample(ss, p.tex_coord).rgb;
     normal = (normal * 2.0f) - 1.0f;
     float3x3 tbn = transpose(float3x3(p.tangent, p.bitangent, p.normal));
     normal = mul(tbn, normal);
@@ -165,15 +190,21 @@ get_normal(pixel p, material_properties mp)
 float4
 ps(pixel p) : SV_TARGET
 {
-    material_properties mp = properties[p.material_id];
+    material_properties mp = properties[per_draw.material_id];
 
     // Sample textures.
-    float4 albedo = get_albedo(p, mp);
-    float roughness
-        = textures[1].Sample(ss, p.tex_coord).g * mp.roughness_factor;
-    float metallic = textures[1].Sample(ss, p.tex_coord).b * mp.metallic_factor;
-    float3 normal = get_normal(p, mp);
-    float3 emissive = textures[3].Sample(ss, p.tex_coord).rgb;
+#if defined(D3D12) || defined(VULKAN)
+    uint tex_offset = per_draw.texture_offset;
+#else
+    uint tex_offset = 0;
+#endif
+    float4 albedo = get_albedo(p, tex_offset, mp);
+    float roughness = textures[tex_offset + 1].Sample(ss, p.tex_coord).g
+                      * mp.roughness_factor;
+    float metallic = textures[tex_offset + 1].Sample(ss, p.tex_coord).b
+                     * mp.metallic_factor;
+    float3 normal = get_normal(p, tex_offset, mp);
+    float3 emissive = textures[tex_offset + 3].Sample(ss, p.tex_coord).rgb;
 
     // Microfacet BRDF using Cook-Torrance model
     // The bidirectional reflective distribution function (BRDF) is the
