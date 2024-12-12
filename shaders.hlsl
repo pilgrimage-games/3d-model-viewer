@@ -11,13 +11,13 @@ struct vertex
 struct pixel
 {
     uint material_id : MATERIAL_ID;
-    float4 position : SV_POSITION; // clip space
-    float2 tex_coord : TEXCOORD;   // texture space
+    float2 tex_coord : TEX_COORD;  // texture space
     float3 normal : NORMAL;        // world space
     float3 tangent : TANGENT;      // world space
     float3 bitangent : BITANGENT;  // world space
     float3 light_dir : POSITION0;  // world space (towards target)
     float3 view_dir : POSITION1;   // world space (towards target)
+    float4 position : SV_POSITION; // clip space
 };
 
 struct material_properties
@@ -53,14 +53,16 @@ StructuredBuffer<material_properties> properties : register(t2);
 Texture2D textures[4] : TEXTURE : register(t3);
 SamplerState ss : SAMPLER : register(s0);
 
-pixel vs(uint index_id : SV_VertexID)
+pixel
+vs(uint index_id : SV_VertexID)
 {
     uint vertex_id = indices[index_id];
     vertex v = vertices[vertex_id];
 
     pixel p;
     p.material_id = material_id;
-    p.position = mul(clip_from_world, mul(world_from_model, float4(v.position, 1.0f)));
+    p.position
+        = mul(clip_from_world, mul(world_from_model, float4(v.position, 1.0f)));
 
     p.tex_coord = v.tex_coord;
 
@@ -78,14 +80,16 @@ pixel vs(uint index_id : SV_VertexID)
 
     p.light_dir = light_dir;
 
-    p.view_dir = (float3)mul(world_from_model, float4(v.position, 1.0f)) - camera_pos;
+    p.view_dir
+        = (float3)mul(world_from_model, float4(v.position, 1.0f)) - camera_pos;
 
     return p;
 }
 
 // Fresnel Reflectance using Schlick approximation
 // The fresnel equation approximates the percentage of light reflected.
-float3 fresnel_schlick(float v_dot_h, float3 f0)
+float3
+fresnel_schlick(float v_dot_h, float3 f0)
 {
     return f0 + ((1.0f - f0) * pow(1.0f - v_dot_h, 5.0f));
 }
@@ -94,7 +98,8 @@ float3 fresnel_schlick(float v_dot_h, float3 f0)
 // The normal distribution function (NDF) describes the orientation of
 // microfacet normals, which determines the shape of highlights and changes how
 // rough or smooth a surface appears.
-float ndf_ggx(float n_dot_h, float roughness)
+float
+ndf_ggx(float n_dot_h, float roughness)
 {
     float alpha = pow(roughness, 2.0f);
     float alpha_sq = pow(alpha, 2.0f);
@@ -104,7 +109,8 @@ float ndf_ggx(float n_dot_h, float roughness)
 }
 
 // Schlick-GGX G1 function
-float g1_schlick_ggx(float n_dot_x, float k)
+float
+g1_schlick_ggx(float n_dot_x, float k)
 {
     return n_dot_x / (n_dot_x * (1.0f - k) + k);
 }
@@ -112,7 +118,8 @@ float g1_schlick_ggx(float n_dot_x, float k)
 // Geometry Term using Smith method
 // The geometry term approximates the probability that light is occluded by
 // microfacets.
-float geometry_smith(float n_dot_l, float n_dot_v, float roughness)
+float
+geometry_smith(float n_dot_l, float n_dot_v, float roughness)
 {
     float r = roughness + 1.0f;
     float k = pow(r, 2.0f) / 8.0f;
@@ -121,7 +128,8 @@ float geometry_smith(float n_dot_l, float n_dot_v, float roughness)
 }
 
 // NOTE: pg_alpha_mode values: PG_AM_OPAQUE (0), PG_AM_MASK (1), PG_AM_BLEND (2)
-float4 get_albedo(pixel p, material_properties mp)
+float4
+get_albedo(pixel p, material_properties mp)
 {
     float4 albedo = textures[0].Sample(ss, p.tex_coord) * mp.base_color_factor;
 
@@ -131,12 +139,13 @@ float4 get_albedo(pixel p, material_properties mp)
     }
 
     uint has_alpha = max(mp.alpha_mode, 1) - 1;
-    albedo.a = (albedo.a * has_alpha) + (1.0f * (1 - has_alpha));
+    albedo.a = lerp(1.0f, albedo.a, has_alpha);
 
     return albedo;
 }
 
-float3 get_normal(pixel p, material_properties mp)
+float3
+get_normal(pixel p, material_properties mp)
 {
     // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed from
     // tangent space to world space.
@@ -148,18 +157,20 @@ float3 get_normal(pixel p, material_properties mp)
     normal = mul(tbn, normal);
 
     // If normal mapping is disabled, use world-space vertex normal.
-    normal = (normal * mp.normal_mapping) + (p.normal * (1 - mp.normal_mapping));
+    normal = lerp(p.normal, normal, mp.normal_mapping);
 
     return normal;
 }
 
-float4 ps(pixel p) : SV_TARGET
+float4
+ps(pixel p) : SV_TARGET
 {
     material_properties mp = properties[p.material_id];
 
     // Sample textures.
     float4 albedo = get_albedo(p, mp);
-    float roughness = textures[1].Sample(ss, p.tex_coord).g * mp.roughness_factor;
+    float roughness
+        = textures[1].Sample(ss, p.tex_coord).g * mp.roughness_factor;
     float metallic = textures[1].Sample(ss, p.tex_coord).b * mp.metallic_factor;
     float3 normal = get_normal(p, mp);
     float3 emissive = textures[3].Sample(ss, p.tex_coord).rgb;
@@ -183,7 +194,8 @@ float4 ps(pixel p) : SV_TARGET
     float3 f = fresnel_schlick(v_dot_h, f0);
     float d = ndf_ggx(n_dot_h, roughness);
     float g = geometry_smith(n_dot_l, n_dot_v, roughness);
-    float3 refracted_light = float3(1.0f, 1.0f, 1.0f) - f; // all non-reflected light
+    float3 refracted_light
+        = float3(1.0f, 1.0f, 1.0f) - f; // all non-reflected light
     float dielectric = 1.0f - metallic; // diffuse BRDF = 0.0f for metals
     float3 diffuse_brdf = (albedo.rgb * refracted_light * dielectric) / PI;
     float3 specular_brdf = (f * d * g) / max(0.0001f, 4.0f * n_dot_l * n_dot_v);

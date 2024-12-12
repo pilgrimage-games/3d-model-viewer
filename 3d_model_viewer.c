@@ -901,7 +901,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     pg_graphics_message* update_gfx_msgs = 0;
     u32 update_gfx_msg_count = 0;
 
-    pg_windows_window_init(&windows.window,
+    pg_windows_init_window(&windows.window,
                            inst,
                            config.fixed_aspect_ratio_width,
                            config.fixed_aspect_ratio_height,
@@ -931,7 +931,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                              config.gfx_gpu_mem_size,
                              app_state.vsync,
                              &err);
-    pg_windows_metrics_init(&windows.metrics, &err);
+    pg_windows_init_metrics(&windows.metrics, &err);
 
     while (windows.msg.message != WM_QUIT)
     {
@@ -967,7 +967,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                    &imgui_ui,
                                    &err);
 
-        pg_windows_metrics_update(&windows.metrics, &err);
+        pg_windows_update_metrics(&windows.metrics, &err);
         app_state.fps = windows.metrics.fps;
         app_state.frame_time = windows.metrics.frame_time;
         app_state.running_simulation_time += app_state.frame_time;
