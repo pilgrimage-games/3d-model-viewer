@@ -16,9 +16,8 @@ static_assert(0, "no supported platform is defined");
 
 typedef enum
 {
+    GRAPHICS_RESOURCE_PER_DRAW_CONSTANTS,
     GRAPHICS_RESOURCE_PER_FRAME_CB,
-    GRAPHICS_RESOURCE_PER_MODEL_CB,
-    GRAPHICS_RESOURCE_PER_MESH_CB,
     GRAPHICS_RESOURCE_VERTEX_SB,
     GRAPHICS_RESOURCE_INDEX_SB,
     GRAPHICS_RESOURCE_MATERIAL_PROPERTIES_SB,
@@ -26,37 +25,27 @@ typedef enum
     GRAPHICS_RESOURCE_COUNT
 } graphics_resources;
 
-// NOTE: This represents constant buffer data. These constraints MUST apply:
-// - Struct members aligned to 16 byte boundary
-// - Struct aligned to 256 bytes
-typedef struct
-{
-    pg_f32_4x4 clip_from_world;
-    pg_f32_3x light_dir;
-    f32 light_dir_padding;
-    pg_f32_3x camera_pos;
-    f32 camera_pos_padding;
-    f32 struct_padding[40];
-} per_frame_cb;
-
-// NOTE: This represents constant buffer data. These constraints MUST apply:
-// - Struct members aligned to 16 byte boundary
-// - Struct aligned to 256 bytes
+// NOTE: This represents constant buffer data, which requires 16-byte alignment.
+// This may require padding a struct member to 16 bytes.
 typedef struct
 {
     pg_f32_4x4 world_from_model;
-    f32 struct_padding[48];
-} per_model_cb;
+    pg_f32_4x4 clip_from_world;
+    pg_f32_3x light_dir;
+    f32 padding0;
+    pg_f32_3x camera_pos;
+    f32 padding1;
+} per_frame_cb;
 
-// NOTE: This represents constant buffer data. These constraints MUST apply:
-// - Struct members aligned to 16 byte boundary
-// - Struct aligned to 256 bytes
+// NOTE: This represents constant buffer data, which requires 16-byte alignment.
+// This may require padding a struct member to 16 bytes.
 typedef struct
 {
     u32 material_id;
-    u32 material_id_padding[3];
-    f32 struct_padding[60];
-} per_mesh_cb;
+    u32 texture_offset;
+    u32 vertex_offset;
+    u32 index_offset;
+} constants_cb;
 
 typedef struct
 {
@@ -323,48 +312,41 @@ init_app(pg_assets* assets,
     // Create initialization graphics messages.
     {
         pg_graphics_message gfx_msgs[] = {
+            {.type = PG_GRAPHICS_MESSAGE_TYPE_CONSTANTS,
+             .constants_msg
+             = {.id = GRAPHICS_RESOURCE_PER_DRAW_CONSTANTS,
+                .shader_register = 0,
+                .shader_stage = PG_SHADER_STAGE_VERTEX | PG_SHADER_STAGE_PIXEL,
+                .elem_count = sizeof(constants_cb) / sizeof(u32)}},
             {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
              .buffer_msg = {.id = GRAPHICS_RESOURCE_PER_FRAME_CB,
-                            .shader_register = 0,
+                            .shader_register = 1,
                             .shader_stage = PG_SHADER_STAGE_VERTEX,
                             .elem_count = 1,
                             .elem_size = sizeof(per_frame_cb)}},
             {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.id = GRAPHICS_RESOURCE_PER_MODEL_CB,
-                            .shader_register = 1,
-                            .shader_stage = PG_SHADER_STAGE_VERTEX,
-                            .elem_count = 1,
-                            .elem_size = sizeof(per_model_cb)}},
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.id = GRAPHICS_RESOURCE_PER_MESH_CB,
-                            .shader_register = 2,
-                            .shader_stage = PG_SHADER_STAGE_VERTEX,
-                            .elem_count = metadata->max_mesh_count,
-                            .elem_size = sizeof(per_mesh_cb)}},
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.structured = true,
-                            .id = GRAPHICS_RESOURCE_VERTEX_SB,
+             .buffer_msg = {.id = GRAPHICS_RESOURCE_VERTEX_SB,
                             .shader_register = 0,
                             .shader_stage = PG_SHADER_STAGE_VERTEX,
                             .elem_count = metadata->max_vertex_count,
                             .elem_size = sizeof(pg_vertex)}},
             {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.structured = true,
-                            .id = GRAPHICS_RESOURCE_INDEX_SB,
+             .buffer_msg = {.id = GRAPHICS_RESOURCE_INDEX_SB,
                             .shader_register = 1,
                             .shader_stage = PG_SHADER_STAGE_VERTEX,
                             .elem_count = metadata->max_index_count,
                             .elem_size = sizeof(PG_GRAPHICS_INDEX_TYPE)}},
             {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.structured = true,
-                            .id = GRAPHICS_RESOURCE_MATERIAL_PROPERTIES_SB,
+             .buffer_msg = {.id = GRAPHICS_RESOURCE_MATERIAL_PROPERTIES_SB,
                             .shader_register = 2,
                             .shader_stage = PG_SHADER_STAGE_PIXEL,
                             .elem_count = metadata->max_material_count,
                             .elem_size = sizeof(pg_asset_material_properties)}},
             {.type = PG_GRAPHICS_MESSAGE_TYPE_MATERIAL,
              .material_msg
-             = {.shader_register = 3,
+             = {.id = GRAPHICS_RESOURCE_MATERIAL,
+                .shader_register = 3,
+                .shader_register_space = 1,
                 .max_material_count = metadata->max_material_count,
                 .max_art_count = MODEL_COUNT,
                 .texture_count = PG_TEXTURE_TYPE_COUNT}}};
@@ -516,15 +498,14 @@ update_app(pg_assets* assets,
         pg_asset_model* model = &assets->models[app_state.model_id];
 
         // (1): Update per_frame CB
-        // (5): When model changes,
-        //      Update per_model CB/per_mesh CB
+        // (3): When model changes,
         //      Update vertex SB/index SB/material properties SB
         // ---
-        // (3): Set per_frame CB/per_model CB/material properties SB
+        // (4): Set per_frame CB/vertex SB/index SB/material properties SB
         // (2): Set opaque and non-opaque draw properties
-        // (5/mesh): Set per_mesh CB/vertex SB/index SB/material
+        // (3/mesh): Set per draw constants/material
         //           Draw
-        u32 max_update_gfx_msg_count = 1 + 5 + 3 + 2 + (5 * model->mesh_count);
+        u32 max_update_gfx_msg_count = 1 + 3 + 4 + 2 + (3 * model->mesh_count);
         ok &= pg_scratch_alloc(transient_mem,
                                max_update_gfx_msg_count
                                    * sizeof(pg_graphics_message),
@@ -646,7 +627,8 @@ update_app(pg_assets* assets,
         {
             pg_f32_4x4 clip_from_world
                 = pg_f32_4x4_mul(clip_from_view, view_from_world);
-            per_frame_cb per_frame = {.clip_from_world = clip_from_world,
+            per_frame_cb per_frame = {.world_from_model = world_from_model,
+                                      .clip_from_world = clip_from_world,
                                       .light_dir = app_state.light_dir,
                                       .camera_pos = camera_position};
 
@@ -684,68 +666,6 @@ update_app(pg_assets* assets,
         // If model changed, update model data.
         if (metadata->model_id_last_frame != app_state.model_id)
         {
-            // Update per model constant buffer.
-            {
-                per_model_cb per_model = {.world_from_model = world_from_model};
-
-                per_model_cb* data;
-                ok &= pg_scratch_alloc(transient_mem,
-                                       sizeof(per_model_cb),
-                                       alignof(per_model_cb),
-                                       &data);
-                if (!ok)
-                {
-                    err->log(err,
-                             PG_ERROR_MAJOR,
-                             "update_app: failed to get memory for per model "
-                             "constant buffer");
-                }
-
-                ok &= pg_copy(&per_model,
-                              sizeof(per_model_cb),
-                              data,
-                              sizeof(per_model_cb));
-                if (!ok)
-                {
-                    err->log(
-                        err,
-                        PG_ERROR_MAJOR,
-                        "update_app: failed to copy per model constant buffer "
-                        "data");
-                }
-
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_PER_MODEL_CB];
-                gfx_msgs[gfx_msg_count].buffer_msg.data = data;
-                gfx_msg_count += 1;
-            }
-
-            // Update per mesh constant buffer.
-            {
-                per_mesh_cb* data;
-                ok &= pg_scratch_alloc(transient_mem,
-                                       model->mesh_count * sizeof(per_mesh_cb),
-                                       alignof(per_mesh_cb),
-                                       &data);
-                if (!ok)
-                {
-                    err->log(err,
-                             PG_ERROR_MAJOR,
-                             "update_app: failed to get memory for per mesh "
-                             "constant buffer");
-                }
-
-                for (u32 i = 0; i < model->mesh_count; i += 1)
-                {
-                    data[i].material_id = model->meshes[i].material_id;
-                }
-
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_PER_MESH_CB];
-                gfx_msgs[gfx_msg_count].buffer_msg.data = data;
-                gfx_msg_count += 1;
-            }
-
             // Update vertex/index structured buffers.
             {
                 gfx_msgs[gfx_msg_count]
@@ -798,8 +718,12 @@ update_app(pg_assets* assets,
         gfx_msgs[gfx_msg_count] = init_gfx_msgs[GRAPHICS_RESOURCE_PER_FRAME_CB];
         gfx_msg_count += 1;
 
-        // Set per model constant buffer.
-        gfx_msgs[gfx_msg_count] = init_gfx_msgs[GRAPHICS_RESOURCE_PER_MODEL_CB];
+        // Set vertex structured buffer.
+        gfx_msgs[gfx_msg_count] = init_gfx_msgs[GRAPHICS_RESOURCE_VERTEX_SB];
+        gfx_msg_count += 1;
+
+        // Set index structured buffer.
+        gfx_msgs[gfx_msg_count] = init_gfx_msgs[GRAPHICS_RESOURCE_INDEX_SB];
         gfx_msg_count += 1;
 
         // Set material properties structured buffer.
@@ -828,29 +752,47 @@ update_app(pg_assets* assets,
                 gfx_msg_count += 1;
             }
 
-            // Set per mesh constant buffer.
-            gfx_msgs[gfx_msg_count]
-                = init_gfx_msgs[GRAPHICS_RESOURCE_PER_MESH_CB];
-            gfx_msgs[gfx_msg_count].buffer_msg.elem_offset = gp[i].mesh_id;
-            gfx_msgs[gfx_msg_count].buffer_msg.elem_count = 1;
-            gfx_msg_count += 1;
-
-            // Set vertex/index structured buffer offsets.
+            // Set per draw constants.
             {
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_VERTEX_SB];
-                gfx_msgs[gfx_msg_count].buffer_msg.elem_offset
-                    = model->meshes[gp[i].mesh_id].vertex_offset;
-                gfx_msgs[gfx_msg_count].buffer_msg.elem_count
-                    = model->meshes[gp[i].mesh_id].vertex_count;
-                gfx_msg_count += 1;
+                constants_cb constants = {
+                    .material_id = gp[i].material_id,
+                    .texture_offset
+                    = (u32)pg_3d_to_1d_index(0,
+                                             gp[i].material_id,
+                                             gp[i].art_id,
+                                             PG_TEXTURE_TYPE_COUNT,
+                                             metadata->max_material_count),
+                    .vertex_offset = model->meshes[gp[i].mesh_id].vertex_offset,
+                    .index_offset = model->meshes[gp[i].mesh_id].index_offset};
+
+                constants_cb* data;
+                ok &= pg_scratch_alloc(transient_mem,
+                                       sizeof(constants_cb),
+                                       alignof(constants_cb),
+                                       &data);
+                if (!ok)
+                {
+                    err->log(err,
+                             PG_ERROR_MAJOR,
+                             "update_app: failed to get memory for constants "
+                             "constant buffer");
+                }
+
+                ok &= pg_copy(&constants,
+                              sizeof(constants_cb),
+                              data,
+                              sizeof(constants_cb));
+                if (!ok)
+                {
+                    err->log(err,
+                             PG_ERROR_MAJOR,
+                             "update_app: failed to copy constants constant "
+                             "buffer data");
+                }
 
                 gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_INDEX_SB];
-                gfx_msgs[gfx_msg_count].buffer_msg.elem_offset
-                    = model->meshes[gp[i].mesh_id].index_offset;
-                gfx_msgs[gfx_msg_count].buffer_msg.elem_count
-                    = model->meshes[gp[i].mesh_id].index_count;
+                    = init_gfx_msgs[GRAPHICS_RESOURCE_PER_DRAW_CONSTANTS];
+                gfx_msgs[gfx_msg_count].constants_msg.data = data;
                 gfx_msg_count += 1;
             }
 
@@ -913,7 +855,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     pg_assets* assets = pg_assets_read_pga(&windows.permanent_mem,
                                            &pg_windows_read_file,
                                            &err);
-    pg_assets_verify(assets, 0, 0, 0, 0, 0, MODEL_COUNT, 0, &err);
+    pg_assets_verify(assets, 0, 0, 0, MODEL_COUNT, 0, &err);
     static_assert(CAP(model_names) == MODEL_COUNT);
 
     init_app(assets,

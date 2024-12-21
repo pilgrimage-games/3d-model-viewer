@@ -23,7 +23,7 @@ download and run the application.
     * Direct3D 11
     * Direct3D 12
     * OpenGL (may experience driver issues on Intel graphics)
-    * Vulkan (may experience driver issues on Intel graphics)
+    * Vulkan
 * Physically Based Rendering (PBR) with support for albedo, metallic-roughness,
   normal, and emissive textures
 * Normal mapping
@@ -32,6 +32,7 @@ download and run the application.
 * Mouse/keyboard and gamepad controls for model selection, rotation, zoom, etc.
 * UI for displaying model names, performance metrics, etc.
 * Ultrawide support
+* Bindless rendering (D3D12/Vulkan only)
 
 ## Models
 The included 3D models are processed from their original glTF 2.0 binary format
