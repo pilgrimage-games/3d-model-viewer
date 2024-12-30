@@ -14,17 +14,6 @@
 static_assert(0, "no supported platform is defined");
 #endif
 
-typedef enum
-{
-    GRAPHICS_RESOURCE_PER_DRAW_CONSTANTS,
-    GRAPHICS_RESOURCE_PER_FRAME_CB,
-    GRAPHICS_RESOURCE_VERTEX_SB,
-    GRAPHICS_RESOURCE_INDEX_SB,
-    GRAPHICS_RESOURCE_MATERIAL_PROPERTIES_SB,
-    GRAPHICS_RESOURCE_MATERIAL,
-    GRAPHICS_RESOURCE_COUNT
-} graphics_resources;
-
 // NOTE: This represents constant buffer data, which requires 16-byte alignment.
 // This may require padding a struct member to 16 bytes.
 typedef struct
@@ -110,7 +99,7 @@ GLOBAL application_state app_state
        .model_id = MODEL_BAKER_AND_THE_BRIDGE,
        .light_dir = {.x = -0.5f, .y = 0.0f, .z = -1.0f},
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}},
-       .gfx_api = PG_GRAPHICS_API_D3D11};
+       .gfx_api = PG_GRAPHICS_API_D3D12};
 
 FUNCTION void
 reset_view(void)
@@ -240,8 +229,7 @@ FUNCTION void
 init_app(pg_assets* assets,
          pg_scratch_allocator* permanent_mem,
          models_metadata* metadata,
-         pg_graphics_message** init_gfx_msgs,
-         u32* init_gfx_msg_count,
+         pg_graphics_command_list* cl,
          pg_error* err)
 {
     b8 ok = true;
@@ -309,67 +297,57 @@ init_app(pg_assets* assets,
                                            .z = normalized_scale};
     }
 
-    // Create initialization graphics messages.
+    // Create initialization command list.
     {
-        pg_graphics_message gfx_msgs[] = {
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_CONSTANTS,
-             .constants_msg
-             = {.id = GRAPHICS_RESOURCE_PER_DRAW_CONSTANTS,
-                .shader_register = 0,
-                .shader_stage = PG_SHADER_STAGE_VERTEX | PG_SHADER_STAGE_PIXEL,
-                .elem_count = sizeof(constants_cb) / sizeof(u32)}},
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.id = GRAPHICS_RESOURCE_PER_FRAME_CB,
-                            .shader_register = 1,
-                            .shader_stage = PG_SHADER_STAGE_VERTEX,
-                            .elem_count = 1,
-                            .elem_size = sizeof(per_frame_cb)}},
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.id = GRAPHICS_RESOURCE_VERTEX_SB,
-                            .shader_register = 0,
-                            .shader_stage = PG_SHADER_STAGE_VERTEX,
-                            .elem_count = metadata->max_vertex_count,
-                            .elem_size = sizeof(pg_vertex)}},
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.id = GRAPHICS_RESOURCE_INDEX_SB,
-                            .shader_register = 1,
-                            .shader_stage = PG_SHADER_STAGE_VERTEX,
-                            .elem_count = metadata->max_index_count,
-                            .elem_size = sizeof(PG_GRAPHICS_INDEX_TYPE)}},
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_BUFFER,
-             .buffer_msg = {.id = GRAPHICS_RESOURCE_MATERIAL_PROPERTIES_SB,
-                            .shader_register = 2,
-                            .shader_stage = PG_SHADER_STAGE_PIXEL,
-                            .elem_count = metadata->max_material_count,
-                            .elem_size = sizeof(pg_asset_material_properties)}},
-            {.type = PG_GRAPHICS_MESSAGE_TYPE_MATERIAL,
-             .material_msg
-             = {.id = GRAPHICS_RESOURCE_MATERIAL,
-                .shader_register = 3,
-                .shader_register_space = 1,
-                .max_material_count = metadata->max_material_count,
-                .max_art_count = MODEL_COUNT,
-                .texture_count = PG_TEXTURE_TYPE_COUNT}}};
-        static_assert(CAP(gfx_msgs) == GRAPHICS_RESOURCE_COUNT);
+        u32 max_texture_count = assets->model_count
+                                * metadata->max_material_count
+                                * PG_TEXTURE_TYPE_COUNT;
+
+        pg_graphics_command cpu_commands[]
+            = {{.type = PG_GRAPHICS_COMMAND_TYPE_ALLOCATE_RESOURCES,
+                .allocate_resources
+                = {.constant_count = sizeof(constants_cb) / sizeof(u32),
+                   .buffer_count = 4,
+                   .texture_count = max_texture_count}},
+               {.type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                .update_buffer = {.buffer_id = 0,
+                                  .shader_stage = PG_SHADER_STAGE_VERTEX,
+                                  .elem_count = 1,
+                                  .elem_size = sizeof(per_frame_cb)}},
+               {.type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                .update_buffer = {.buffer_id = 1,
+                                  .shader_stage = PG_SHADER_STAGE_VERTEX,
+                                  .elem_count = metadata->max_vertex_count,
+                                  .elem_size = sizeof(pg_vertex)}},
+               {.type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                .update_buffer = {.buffer_id = 2,
+                                  .shader_stage = PG_SHADER_STAGE_VERTEX,
+                                  .elem_count = metadata->max_index_count,
+                                  .elem_size = sizeof(PG_GRAPHICS_INDEX_TYPE)}},
+               {.type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                .update_buffer
+                = {.buffer_id = 3,
+                   .shader_stage = PG_SHADER_STAGE_PIXEL,
+                   .elem_count = metadata->max_material_count,
+                   .elem_size = sizeof(pg_asset_material_properties)}}};
 
         ok &= pg_scratch_alloc(permanent_mem,
-                               GRAPHICS_RESOURCE_COUNT
-                                   * sizeof(pg_graphics_message),
-                               alignof(pg_graphics_message),
-                               init_gfx_msgs);
-        ok &= pg_copy(gfx_msgs,
-                      GRAPHICS_RESOURCE_COUNT * sizeof(pg_graphics_message),
-                      *init_gfx_msgs,
-                      GRAPHICS_RESOURCE_COUNT * sizeof(pg_graphics_message));
+                               CAP(cpu_commands) * sizeof(pg_graphics_command),
+                               alignof(pg_graphics_command),
+                               &cl->cpu_commands);
+        ok &= pg_copy(cpu_commands,
+                      CAP(cpu_commands) * sizeof(pg_graphics_command),
+                      cl->cpu_commands,
+                      CAP(cpu_commands) * sizeof(pg_graphics_command));
         if (!ok)
         {
-            err->log(
-                err,
-                PG_ERROR_MAJOR,
-                "init_app: failed to copy initialization graphics messages");
+            err->log(err,
+                     PG_ERROR_MAJOR,
+                     "init_app: failed to create graphics command list");
         }
 
-        *init_gfx_msg_count = CAP(gfx_msgs);
+        cl->cpu_command_count = CAP(cpu_commands);
+        cl->gpu_command_count = 0;
     }
 
     reset_view();
@@ -379,264 +357,257 @@ FUNCTION void
 update_app(pg_assets* assets,
            pg_input* input,
            models_metadata* metadata,
-           pg_graphics_message* init_gfx_msgs,
            pg_f32_2x previous_cursor_position,
            pg_f32_2x render_res,
            pg_scratch_allocator* transient_mem,
-           pg_graphics_message** update_gfx_msgs,
-           u32* update_gfx_msg_count,
+           pg_graphics_command_list* cl,
            pg_error* err)
 {
     b8 ok = true;
 
-    // Left/Up: Previous Model
-    if (pg_button_pressed(&input->kbd.left, config.input_repeat_rate)
-        || pg_button_pressed(&input->kbd.up, config.input_repeat_rate)
-        || pg_button_pressed(&input->gp[0].left, config.input_repeat_rate)
-        || pg_button_pressed(&input->gp[0].up, config.input_repeat_rate))
+    // Process input.
+    pg_f32_2x cursor_delta = {0};
     {
-        if (app_state.model_id == 1)
+        // Left/Up: Previous Model
+        if (pg_button_pressed(&input->kbd.left, config.input_repeat_rate)
+            || pg_button_pressed(&input->kbd.up, config.input_repeat_rate)
+            || pg_button_pressed(&input->gp[0].left, config.input_repeat_rate)
+            || pg_button_pressed(&input->gp[0].up, config.input_repeat_rate))
         {
-            app_state.model_id = assets->model_count - 1;
+            if (app_state.model_id == 1)
+            {
+                app_state.model_id = assets->model_count - 1;
+            }
+            else
+            {
+                app_state.model_id -= 1;
+            }
+            reset_view();
         }
-        else
-        {
-            app_state.model_id -= 1;
-        }
-        reset_view();
-    }
 
-    // Right/Down: Next Model
-    if (pg_button_pressed(&input->kbd.right, config.input_repeat_rate)
-        || pg_button_pressed(&input->kbd.down, config.input_repeat_rate)
-        || pg_button_pressed(&input->gp[0].right, config.input_repeat_rate)
-        || pg_button_pressed(&input->gp[0].down, config.input_repeat_rate))
-    {
-        if (app_state.model_id == assets->model_count - 1)
+        // Right/Down: Next Model
+        if (pg_button_pressed(&input->kbd.right, config.input_repeat_rate)
+            || pg_button_pressed(&input->kbd.down, config.input_repeat_rate)
+            || pg_button_pressed(&input->gp[0].right, config.input_repeat_rate)
+            || pg_button_pressed(&input->gp[0].down, config.input_repeat_rate))
         {
-            app_state.model_id = 1;
+            if (app_state.model_id == assets->model_count - 1)
+            {
+                app_state.model_id = 1;
+            }
+            else
+            {
+                app_state.model_id += 1;
+            }
+            reset_view();
         }
-        else
-        {
-            app_state.model_id += 1;
-        }
-        reset_view();
-    }
 
-    b8 mouse_active = true;
+        b8 mouse_active = true;
 #if defined(PG_APP_IMGUI)
-    if (ImGui_GetIO()->WantCaptureMouse)
-    {
-        mouse_active = false;
-    }
+        if (ImGui_GetIO()->WantCaptureMouse)
+        {
+            mouse_active = false;
+        }
 #endif
 
-    pg_f32_2x cursor_delta = {0};
-    if (mouse_active
-        && pg_button_pressed(&input->mouse.left, app_state.frame_time))
-    {
-        cursor_delta = pg_f32_2x_mul_scalar(
-            pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
-            100.0f);
-    }
-
-    if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
-        || input->gp[0].rs.x != 0.0f || input->gp[0].rs.y != 0.0f)
-    {
-        app_state.auto_rotate = false;
-    }
-
-    while (app_state.running_simulation_time != 0.0f)
-    {
-        f32 dt = config.simulation_time_step;
-        if (app_state.running_simulation_time < config.simulation_time_step)
+        if (mouse_active
+            && pg_button_pressed(&input->mouse.left, app_state.frame_time))
         {
-            dt = app_state.running_simulation_time;
+            cursor_delta = pg_f32_2x_mul_scalar(
+                pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
+                100.0f);
         }
 
-        // Rotate camera.
-        f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
-        f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
-        if (app_state.auto_rotate)
+        if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
+            || input->gp[0].rs.x != 0.0f || input->gp[0].rs.y != 0.0f)
         {
-            app_state.camera.position.x
-                += pg_f32_deg_to_rad(auto_rotation_rate * dt);
+            app_state.auto_rotate = false;
         }
-        else
-        {
-            app_state.camera.position.x += pg_f32_deg_to_rad(
-                manual_rotation_rate * cursor_delta.x * dt);
-            app_state.camera.position.y += pg_f32_deg_to_rad(
-                manual_rotation_rate * cursor_delta.y * dt);
-            app_state.camera.position.x += pg_f32_deg_to_rad(
-                manual_rotation_rate * input->gp[0].rs.x * dt);
-            app_state.camera.position.y += pg_f32_deg_to_rad(
-                manual_rotation_rate * input->gp[0].rs.y * dt);
-        }
-
-        // Zoom camera.
-        f32 zoom_rate = app_state.center_zoom / 1000.0f;
-        app_state.camera.position.z
-            -= zoom_rate * (u8)input->mouse.forward.pressed * dt;
-        app_state.camera.position.z
-            += zoom_rate * (u8)input->mouse.back.pressed * dt;
-        app_state.camera.position.z -= zoom_rate * input->gp[0].rt * dt;
-        app_state.camera.position.z += zoom_rate * input->gp[0].lt * dt;
-
-        app_state.running_simulation_time -= dt;
     }
 
-    pg_camera_clamp(
-        (pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
-        (pg_f32_2x){.min = 0.0f, .max = PG_PI},
-        (pg_f32_2x){.min = 0.0f, .max = app_state.center_zoom * 2.0f},
-        true,
-        &app_state.camera);
-
-    // Create update graphics messages.
+    // Simulate.
     {
-        pg_asset_model* model = &assets->models[app_state.model_id];
+        while (app_state.running_simulation_time != 0.0f)
+        {
+            f32 dt = config.simulation_time_step;
+            if (app_state.running_simulation_time < config.simulation_time_step)
+            {
+                dt = app_state.running_simulation_time;
+            }
 
-        // (1): Update per_frame CB
-        // (3): When model changes,
-        //      Update vertex SB/index SB/material properties SB
-        // ---
-        // (4): Set per_frame CB/vertex SB/index SB/material properties SB
-        // (2): Set opaque and non-opaque draw properties
-        // (3/mesh): Set per draw constants/material
-        //           Draw
-        u32 max_update_gfx_msg_count = 1 + 3 + 4 + 2 + (3 * model->mesh_count);
+            // Rotate camera.
+            f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
+            f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
+            if (app_state.auto_rotate)
+            {
+                app_state.camera.position.x
+                    += pg_f32_deg_to_rad(auto_rotation_rate * dt);
+            }
+            else
+            {
+                app_state.camera.position.x += pg_f32_deg_to_rad(
+                    manual_rotation_rate * cursor_delta.x * dt);
+                app_state.camera.position.y += pg_f32_deg_to_rad(
+                    manual_rotation_rate * cursor_delta.y * dt);
+                app_state.camera.position.x += pg_f32_deg_to_rad(
+                    manual_rotation_rate * input->gp[0].rs.x * dt);
+                app_state.camera.position.y += pg_f32_deg_to_rad(
+                    manual_rotation_rate * input->gp[0].rs.y * dt);
+            }
+
+            // Zoom camera.
+            f32 zoom_rate = app_state.center_zoom / 1000.0f;
+            app_state.camera.position.z
+                -= zoom_rate * (u8)input->mouse.forward.pressed * dt;
+            app_state.camera.position.z
+                += zoom_rate * (u8)input->mouse.back.pressed * dt;
+            app_state.camera.position.z -= zoom_rate * input->gp[0].rt * dt;
+            app_state.camera.position.z += zoom_rate * input->gp[0].lt * dt;
+
+            app_state.running_simulation_time -= dt;
+        }
+
+        pg_camera_clamp(
+            (pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
+            (pg_f32_2x){.min = 0.0f, .max = PG_PI},
+            (pg_f32_2x){.min = 0.0f, .max = app_state.center_zoom * 2.0f},
+            true,
+            &app_state.camera);
+    }
+
+    // Generate matrices.
+    pg_asset_model* model = &assets->models[app_state.model_id];
+    pg_f32_3x camera_position
+        = pg_camera_get_cartesian_position(&app_state.camera);
+    pg_f32_4x4 world_from_model
+        = pg_f32_4x4_world_from_model(metadata->scaling[app_state.model_id],
+                                      app_state.rotation,
+                                      (pg_f32_3x){0});
+    pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
+        27.0f,
+        render_res.width / render_res.height,
+        0.1f,
+        100.0f);
+    pg_f32_4x4 view_from_world
+        = pg_f32_4x4_view_from_world(camera_position,
+                                     app_state.camera.focal_point,
+                                     app_state.camera.up_axis);
+
+    // Create and sort graphics properties.
+    pg_graphics_properties* opaque_gp;
+    pg_graphics_properties* non_opaque_gp;
+    pg_graphics_properties* gp;
+    u32 opaque_gp_count = 0;
+    u32 non_opaque_gp_count = 0;
+    u32 gp_count = 0;
+    {
         ok &= pg_scratch_alloc(transient_mem,
-                               max_update_gfx_msg_count
-                                   * sizeof(pg_graphics_message),
-                               alignof(pg_graphics_message),
-                               update_gfx_msgs);
+                               model->mesh_count
+                                   * sizeof(pg_graphics_properties),
+                               alignof(pg_graphics_properties),
+                               &opaque_gp);
+        ok &= pg_scratch_alloc(transient_mem,
+                               model->mesh_count
+                                   * sizeof(pg_graphics_properties),
+                               alignof(pg_graphics_properties),
+                               &non_opaque_gp);
+        ok &= pg_scratch_alloc(transient_mem,
+                               model->mesh_count
+                                   * sizeof(pg_graphics_properties),
+                               alignof(pg_graphics_properties),
+                               &gp);
+        if (!ok)
+        {
+            err->log(
+                err,
+                PG_ERROR_MAJOR,
+                "update_app: failed to get memory for graphics properties");
+        }
+
+        pg_f32_4x4 view_from_model
+            = pg_f32_4x4_mul(view_from_world, world_from_model);
+        for (u32 i = 0; i < model->mesh_count; i += 1)
+        {
+            u32 material_id = model->meshes[i].material_id;
+            pg_graphics_properties curr_gp = {
+                .art_id = app_state.model_id,
+                .mesh_id = i,
+                .material_id = material_id,
+                .camera_dist = pg_asset_mesh_get_camera_dist(model->meshes + i,
+                                                             view_from_model)};
+
+            if (model->materials[material_id].properties.alpha_mode
+                == PG_ALPHA_MODE_OPAQUE)
+            {
+                opaque_gp[opaque_gp_count] = curr_gp;
+                opaque_gp_count += 1;
+            }
+            else
+            {
+                non_opaque_gp[non_opaque_gp_count] = curr_gp;
+                non_opaque_gp_count += 1;
+            }
+        }
+
+        pg_sort(opaque_gp,
+                opaque_gp_count,
+                sizeof(pg_graphics_properties),
+                &pg_sort_graphics_properties_front_to_back);
+        pg_sort(non_opaque_gp,
+                non_opaque_gp_count,
+                sizeof(pg_graphics_properties),
+                &pg_sort_graphics_properties_back_to_front);
+
+        gp_count = opaque_gp_count + non_opaque_gp_count;
+        ok &= pg_copy(opaque_gp,
+                      opaque_gp_count * sizeof(pg_graphics_properties),
+                      gp,
+                      gp_count * sizeof(pg_graphics_properties));
+        ok &= pg_copy(non_opaque_gp,
+                      non_opaque_gp_count * sizeof(pg_graphics_properties),
+                      gp + opaque_gp_count,
+                      gp_count * sizeof(pg_graphics_properties));
         if (!ok)
         {
             err->log(err,
                      PG_ERROR_MAJOR,
-                     "update_app: failed to get memory for update graphics "
-                     "messages");
+                     "update_app: failed to copy opaque/non-opaque graphics "
+                     "properties into unified list");
         }
+    }
 
-        pg_graphics_message* gfx_msgs = *update_gfx_msgs;
-        u32 gfx_msg_count = 0;
+    // Allocate memory for command list.
+    *cl = (pg_graphics_command_list){0};
+    u32 max_cpu_command_count = 5;
+    u32 max_gpu_command_count = 50;
+    ok &= pg_scratch_alloc(transient_mem,
+                           max_cpu_command_count * sizeof(pg_graphics_command),
+                           alignof(pg_graphics_command),
+                           &cl->cpu_commands);
+    ok &= pg_scratch_alloc(transient_mem,
+                           max_gpu_command_count * sizeof(pg_graphics_command),
+                           alignof(pg_graphics_command),
+                           &cl->gpu_commands);
+    if (!ok)
+    {
+        err->log(err,
+                 PG_ERROR_MAJOR,
+                 "update_app: failed to get memory for command list");
+    }
 
-        // Generate matrices.
-        pg_f32_3x camera_position
-            = pg_camera_get_cartesian_position(&app_state.camera);
-        pg_f32_4x4 world_from_model
-            = pg_f32_4x4_world_from_model(metadata->scaling[app_state.model_id],
-                                          app_state.rotation,
-                                          (pg_f32_3x){0});
-        pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
-            27.0f,
-            render_res.width / render_res.height,
-            0.1f,
-            100.0f);
-        pg_f32_4x4 view_from_world
-            = pg_f32_4x4_view_from_world(camera_position,
-                                         app_state.camera.focal_point,
-                                         app_state.camera.up_axis);
-
-        // Create and sort graphics properties.
-        pg_graphics_properties* opaque_gp;
-        pg_graphics_properties* non_opaque_gp;
-        pg_graphics_properties* gp;
-        u32 opaque_gp_count = 0;
-        u32 non_opaque_gp_count = 0;
-        u32 gp_count = 0;
-        {
-            ok &= pg_scratch_alloc(transient_mem,
-                                   metadata->max_mesh_count
-                                       * sizeof(pg_graphics_properties),
-                                   alignof(pg_graphics_properties),
-                                   &opaque_gp);
-            ok &= pg_scratch_alloc(transient_mem,
-                                   metadata->max_mesh_count
-                                       * sizeof(pg_graphics_properties),
-                                   alignof(pg_graphics_properties),
-                                   &non_opaque_gp);
-            ok &= pg_scratch_alloc(transient_mem,
-                                   metadata->max_mesh_count
-                                       * sizeof(pg_graphics_properties),
-                                   alignof(pg_graphics_properties),
-                                   &gp);
-            if (!ok)
-            {
-                err->log(
-                    err,
-                    PG_ERROR_MAJOR,
-                    "update_app: failed to get memory for graphics properties");
-            }
-
-            pg_f32_4x4 view_from_model
-                = pg_f32_4x4_mul(view_from_world, world_from_model);
-            for (u32 i = 0; i < model->mesh_count; i += 1)
-            {
-                u32 material_id = model->meshes[i].material_id;
-                pg_graphics_properties curr_gp
-                    = {.art_id = app_state.model_id,
-                       .mesh_id = i,
-                       .material_id = material_id,
-                       .camera_dist
-                       = pg_asset_mesh_get_camera_dist(model->meshes + i,
-                                                       view_from_model)};
-
-                if (model->materials[material_id].properties.alpha_mode
-                    == PG_ALPHA_MODE_OPAQUE)
-                {
-                    opaque_gp[opaque_gp_count] = curr_gp;
-                    opaque_gp_count += 1;
-                }
-                else
-                {
-                    non_opaque_gp[non_opaque_gp_count] = curr_gp;
-                    non_opaque_gp_count += 1;
-                }
-            }
-
-            pg_sort(opaque_gp,
-                    opaque_gp_count,
-                    sizeof(pg_graphics_properties),
-                    &pg_sort_graphics_properties_front_to_back);
-            pg_sort(non_opaque_gp,
-                    non_opaque_gp_count,
-                    sizeof(pg_graphics_properties),
-                    &pg_sort_graphics_properties_back_to_front);
-
-            gp_count = opaque_gp_count + non_opaque_gp_count;
-            ok &= pg_copy(opaque_gp,
-                          opaque_gp_count * sizeof(pg_graphics_properties),
-                          gp,
-                          gp_count * sizeof(pg_graphics_properties));
-            ok &= pg_copy(non_opaque_gp,
-                          non_opaque_gp_count * sizeof(pg_graphics_properties),
-                          gp + opaque_gp_count,
-                          gp_count * sizeof(pg_graphics_properties));
-            if (!ok)
-            {
-                err->log(err,
-                         PG_ERROR_MAJOR,
-                         "update_app: failed to copy opaque/non-opaque "
-                         "graphics properties into unified list");
-            }
-        }
-
-        // Update per frame constant buffer.
+    // Generate CPU commands.
+    u32 cpu_command_count = 0;
+    {
+        // Update per frame CB.
         {
             pg_f32_4x4 clip_from_world
                 = pg_f32_4x4_mul(clip_from_view, view_from_world);
-            per_frame_cb per_frame = {.world_from_model = world_from_model,
-                                      .clip_from_world = clip_from_world,
-                                      .light_dir = app_state.light_dir,
-                                      .camera_pos = camera_position};
 
-            per_frame_cb* data;
+            per_frame_cb* per_frame;
             ok &= pg_scratch_alloc(transient_mem,
                                    sizeof(per_frame_cb),
                                    alignof(per_frame_cb),
-                                   &data);
+                                   &per_frame);
             if (!ok)
             {
                 err->log(err,
@@ -644,46 +615,41 @@ update_app(pg_assets* assets,
                          "update_app: failed to get memory for per frame "
                          "constant buffer");
             }
+            *per_frame = (per_frame_cb){.world_from_model = world_from_model,
+                                        .clip_from_world = clip_from_world,
+                                        .light_dir = app_state.light_dir,
+                                        .camera_pos = camera_position};
 
-            ok &= pg_copy(&per_frame,
-                          sizeof(per_frame_cb),
-                          data,
-                          sizeof(per_frame_cb));
-            if (!ok)
-            {
-                err->log(err,
-                         PG_ERROR_MAJOR,
-                         "update_app: failed to copy per frame constant buffer "
-                         "data");
-            }
-
-            gfx_msgs[gfx_msg_count]
-                = init_gfx_msgs[GRAPHICS_RESOURCE_PER_FRAME_CB];
-            gfx_msgs[gfx_msg_count].buffer_msg.data = data;
-            gfx_msg_count += 1;
+            cl->cpu_commands[cpu_command_count] = (pg_graphics_command){
+                .type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                .update_buffer = {.buffer_id = 0,
+                                  .elem_count = 1,
+                                  .elem_size = sizeof(per_frame_cb),
+                                  .data = per_frame}};
+            cpu_command_count += 1;
         }
 
-        // If model changed, update model data.
         if (metadata->model_id_last_frame != app_state.model_id)
         {
-            // Update vertex/index structured buffers.
-            {
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_VERTEX_SB];
-                gfx_msgs[gfx_msg_count].buffer_msg.elem_count
-                    = model->vertex_count;
-                gfx_msgs[gfx_msg_count].buffer_msg.data = model->vertices;
-                gfx_msg_count += 1;
+            // Update vertex SB.
+            cl->cpu_commands[cpu_command_count] = (pg_graphics_command){
+                .type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                .update_buffer = {.buffer_id = 1,
+                                  .elem_count = model->vertex_count,
+                                  .elem_size = sizeof(pg_vertex),
+                                  .data = model->vertices}};
+            cpu_command_count += 1;
 
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_INDEX_SB];
-                gfx_msgs[gfx_msg_count].buffer_msg.elem_count
-                    = model->index_count;
-                gfx_msgs[gfx_msg_count].buffer_msg.data = model->indices;
-                gfx_msg_count += 1;
-            }
+            // Update index SB.
+            cl->cpu_commands[cpu_command_count] = (pg_graphics_command){
+                .type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                .update_buffer = {.buffer_id = 2,
+                                  .elem_count = model->index_count,
+                                  .elem_size = sizeof(PG_GRAPHICS_INDEX_TYPE),
+                                  .data = model->indices}};
+            cpu_command_count += 1;
 
-            // Update material properties structured buffer.
+            // Update material properties SB.
             {
                 pg_asset_material_properties* material_properties;
                 ok &= pg_scratch_alloc(
@@ -705,31 +671,92 @@ update_app(pg_assets* assets,
                     material_properties[i] = model->materials[i].properties;
                 }
 
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_MATERIAL_PROPERTIES_SB];
-                gfx_msgs[gfx_msg_count].buffer_msg.elem_count
-                    = model->material_count;
-                gfx_msgs[gfx_msg_count].buffer_msg.data = material_properties;
-                gfx_msg_count += 1;
+                cl->cpu_commands[cpu_command_count] = (pg_graphics_command){
+                    .type = PG_GRAPHICS_COMMAND_TYPE_UPDATE_BUFFER,
+                    .update_buffer
+                    = {.buffer_id = 3,
+                       .elem_count = model->material_count,
+                       .elem_size = sizeof(pg_asset_material_properties),
+                       .data = material_properties}};
+                cpu_command_count += 1;
             }
         }
+    }
 
-        // Set per frame constant buffer.
-        gfx_msgs[gfx_msg_count] = init_gfx_msgs[GRAPHICS_RESOURCE_PER_FRAME_CB];
-        gfx_msg_count += 1;
+    // Generate GPU commands.
+    u32 gpu_command_count = 0;
+    {
+        if (metadata->model_id_last_frame != app_state.model_id)
+        {
+            // Fetch textures for new model.
 
-        // Set vertex structured buffer.
-        gfx_msgs[gfx_msg_count] = init_gfx_msgs[GRAPHICS_RESOURCE_VERTEX_SB];
-        gfx_msg_count += 1;
+            u32 texture_count = model->material_count * PG_TEXTURE_TYPE_COUNT;
 
-        // Set index structured buffer.
-        gfx_msgs[gfx_msg_count] = init_gfx_msgs[GRAPHICS_RESOURCE_INDEX_SB];
-        gfx_msg_count += 1;
+            pg_asset_texture* textures;
+            u32* texture_ids;
+            ok &= pg_scratch_alloc(transient_mem,
+                                   texture_count * sizeof(pg_asset_texture),
+                                   alignof(pg_asset_texture),
+                                   &textures);
+            ok &= pg_scratch_alloc(transient_mem,
+                                   texture_count * sizeof(u32),
+                                   alignof(u32),
+                                   &texture_ids);
+            if (!ok)
+            {
+                err->log(err,
+                         PG_ERROR_MAJOR,
+                         "update_app: failed to get memory for textures");
+            }
 
-        // Set material properties structured buffer.
-        gfx_msgs[gfx_msg_count]
-            = init_gfx_msgs[GRAPHICS_RESOURCE_MATERIAL_PROPERTIES_SB];
-        gfx_msg_count += 1;
+            u32 idx = 0;
+            for (u32 i = 0; i < model->material_count; i += 1)
+            {
+                for (u32 j = 0; j < PG_TEXTURE_TYPE_COUNT; j += 1)
+                {
+                    textures[idx] = model->materials[i].textures[j];
+                    texture_ids[idx]
+                        = (u32)pg_3d_to_1d_index(j,
+                                                 i,
+                                                 app_state.model_id,
+                                                 PG_TEXTURE_TYPE_COUNT,
+                                                 metadata->max_material_count);
+                    idx += 1;
+                }
+            }
+
+            cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
+                .type = PG_GRAPHICS_COMMAND_TYPE_FETCH_TEXTURES,
+                .fetch_textures = {.texture_count = texture_count,
+                                   .shader_stage = PG_SHADER_STAGE_PIXEL,
+                                   .texture_ids = texture_ids,
+                                   .textures = textures}};
+            gpu_command_count += 1;
+        }
+
+        // Set per frame CB.
+        cl->gpu_commands[gpu_command_count]
+            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
+                                    .set_buffer = {.buffer_id = 0}};
+        gpu_command_count += 1;
+
+        // Set vertex SB.
+        cl->gpu_commands[gpu_command_count]
+            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
+                                    .set_buffer = {.buffer_id = 1}};
+        gpu_command_count += 1;
+
+        // Set index SB.
+        cl->gpu_commands[gpu_command_count]
+            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
+                                    .set_buffer = {.buffer_id = 2}};
+        gpu_command_count += 1;
+
+        // Set material properties SB.
+        cl->gpu_commands[gpu_command_count]
+            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
+                                    .set_buffer = {.buffer_id = 3}};
+        gpu_command_count += 1;
 
         u32 material_id = metadata->max_material_count;
         for (u32 i = 0; i < gp_count; i += 1)
@@ -737,24 +764,34 @@ update_app(pg_assets* assets,
             // Set draw properties.
             if (i == 0)
             {
-                gfx_msgs[gfx_msg_count] = (pg_graphics_message){
-                    .type = PG_GRAPHICS_MESSAGE_TYPE_DRAW_PROPERTIES,
-                    .draw_properties_msg
-                    = {.triangle_strip = false, .opaque = true}};
-                gfx_msg_count += 1;
+                cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
+                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_DRAW_PROPERTIES,
+                    .set_draw_properties = {.opaque = true}};
+                gpu_command_count += 1;
             }
             else if (i == opaque_gp_count)
             {
-                gfx_msgs[gfx_msg_count] = (pg_graphics_message){
-                    .type = PG_GRAPHICS_MESSAGE_TYPE_DRAW_PROPERTIES,
-                    .draw_properties_msg
-                    = {.triangle_strip = false, .opaque = false}};
-                gfx_msg_count += 1;
+                cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
+                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_DRAW_PROPERTIES,
+                    .set_draw_properties = {.opaque = false}};
+                gpu_command_count += 1;
             }
 
             // Set per draw constants.
             {
-                constants_cb constants = {
+                constants_cb* constants;
+                ok &= pg_scratch_alloc(transient_mem,
+                                       sizeof(constants_cb),
+                                       alignof(constants_cb),
+                                       &constants);
+                if (!ok)
+                {
+                    err->log(err,
+                             PG_ERROR_MAJOR,
+                             "update_app: failed to get memory for constants "
+                             "constant buffer");
+                }
+                *constants = (constants_cb){
                     .material_id = gp[i].material_id,
                     .texture_offset
                     = (u32)pg_3d_to_1d_index(0,
@@ -765,63 +802,69 @@ update_app(pg_assets* assets,
                     .vertex_offset = model->meshes[gp[i].mesh_id].vertex_offset,
                     .index_offset = model->meshes[gp[i].mesh_id].index_offset};
 
-                constants_cb* data;
-                ok &= pg_scratch_alloc(transient_mem,
-                                       sizeof(constants_cb),
-                                       alignof(constants_cb),
-                                       &data);
-                if (!ok)
-                {
-                    err->log(err,
-                             PG_ERROR_MAJOR,
-                             "update_app: failed to get memory for constants "
-                             "constant buffer");
-                }
-
-                ok &= pg_copy(&constants,
-                              sizeof(constants_cb),
-                              data,
-                              sizeof(constants_cb));
-                if (!ok)
-                {
-                    err->log(err,
-                             PG_ERROR_MAJOR,
-                             "update_app: failed to copy constants constant "
-                             "buffer data");
-                }
-
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_PER_DRAW_CONSTANTS];
-                gfx_msgs[gfx_msg_count].constants_msg.data = data;
-                gfx_msg_count += 1;
+                cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
+                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_CONSTANTS,
+                    .set_constants
+                    = {.constant_count = sizeof(constants_cb) / sizeof(u32),
+                       .constants = (u32*)constants}};
+                gpu_command_count += 1;
             }
 
-            // Set material.
+            // Set textures.
             if (gp[i].material_id != material_id)
             {
-                gfx_msgs[gfx_msg_count]
-                    = init_gfx_msgs[GRAPHICS_RESOURCE_MATERIAL];
-                gfx_msgs[gfx_msg_count].material_msg.material_id
-                    = gp[i].material_id;
-                gfx_msgs[gfx_msg_count].material_msg.art_id = gp[i].art_id;
-                gfx_msgs[gfx_msg_count].material_msg.textures
-                    = model->materials[gp[i].material_id].textures;
-                gfx_msg_count += 1;
+                u32 texture_count = PG_TEXTURE_TYPE_COUNT;
+                u32* texture_ids;
+                ok &= pg_scratch_alloc(transient_mem,
+                                       texture_count * sizeof(u32),
+                                       alignof(u32),
+                                       &texture_ids);
+                if (!ok)
+                {
+                    err->log(err,
+                             PG_ERROR_MAJOR,
+                             "get_graphics_state: failed to get memory for "
+                             "texture ids");
+                }
+
+                for (u32 j = 0; j < PG_TEXTURE_TYPE_COUNT; j += 1)
+                {
+                    texture_ids[j]
+                        = (u32)pg_3d_to_1d_index(j,
+                                                 gp[i].material_id,
+                                                 gp[i].art_id,
+                                                 PG_TEXTURE_TYPE_COUNT,
+                                                 metadata->max_material_count);
+                }
+
+                cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
+                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_TEXTURES,
+                    .set_textures = {.texture_count = texture_count,
+                                     .texture_ids = texture_ids}};
+                gpu_command_count += 1;
 
                 material_id = gp[i].material_id;
             }
 
             // Draw.
-            gfx_msgs[gfx_msg_count] = (pg_graphics_message){
-                .type = PG_GRAPHICS_MESSAGE_TYPE_DRAW,
-                .draw_msg
+            cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
+                .type = PG_GRAPHICS_COMMAND_TYPE_DRAW,
+                .draw
                 = {.vertex_count = model->meshes[gp[i].mesh_id].index_count,
                    .instance_count = 1}};
-            gfx_msg_count += 1;
+            gpu_command_count += 1;
         }
-
-        *update_gfx_msg_count = gfx_msg_count;
     }
+
+    if (cpu_command_count > max_cpu_command_count
+        || gpu_command_count > max_gpu_command_count)
+    {
+        err->log(err,
+                 PG_ERROR_MAJOR,
+                 "get_graphics_state: not enough memory for graphics commands");
+    }
+    cl->cpu_command_count = cpu_command_count;
+    cl->gpu_command_count = gpu_command_count;
 }
 
 #if defined(WINDOWS)
@@ -838,10 +881,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
     models_metadata metadata = {0};
 
-    pg_graphics_message* init_gfx_msgs = 0;
-    u32 init_gfx_msg_count = 0;
-    pg_graphics_message* update_gfx_msgs = 0;
-    u32 update_gfx_msg_count = 0;
+    pg_graphics_command_list init_command_list = {0};
+    pg_graphics_command_list update_command_list = {0};
 
     pg_windows_init_window(&windows.window,
                            inst,
@@ -861,16 +902,14 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     init_app(assets,
              &windows.permanent_mem,
              &metadata,
-             &init_gfx_msgs,
-             &init_gfx_msg_count,
+             &init_command_list,
              &err);
 
     pg_windows_init_graphics(&windows,
                              app_state.gfx_api,
-                             init_gfx_msgs,
-                             init_gfx_msg_count,
                              config.gfx_cpu_mem_size,
                              config.gfx_gpu_mem_size,
+                             init_command_list,
                              app_state.vsync,
                              &err);
     pg_windows_init_metrics(&windows.metrics, &err);
@@ -892,19 +931,16 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         update_app(assets,
                    &windows.input,
                    &metadata,
-                   init_gfx_msgs,
                    previous_cursor_position,
                    windows.window.render_res,
                    &windows.transient_mem,
-                   &update_gfx_msgs,
-                   &update_gfx_msg_count,
+                   &update_command_list,
                    &err);
         metadata.model_id_last_frame = app_state.model_id;
 
         pg_windows_update_graphics(&windows,
                                    app_state.gfx_api,
-                                   update_gfx_msgs,
-                                   update_gfx_msg_count,
+                                   update_command_list,
                                    app_state.vsync,
                                    &imgui_ui,
                                    &err);
@@ -920,10 +956,9 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
             pg_windows_reload_graphics(&windows,
                                        inst,
                                        app_state.gfx_api,
-                                       init_gfx_msgs,
-                                       init_gfx_msg_count,
                                        config.gfx_cpu_mem_size,
                                        config.gfx_gpu_mem_size,
+                                       init_command_list,
                                        config.fixed_aspect_ratio_width,
                                        config.fixed_aspect_ratio_height,
                                        app_state.vsync,
