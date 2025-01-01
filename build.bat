@@ -130,10 +130,10 @@ if defined all (
     rem -T: Set shader target profile
     rem -Fo: Set output file path
     rem -vkbr a b c d: Assign HLSL register (a) in space (b) to binding (c) in descriptor set (d)
-    !dxc! shaders.hlsl !dxc_flags! -DOPENGL -E vs -T vs_6_0 -Fo build\shaders\gl_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t0 0 0 0 -vkbr t1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr s0 0 3 0
-    !dxc! shaders.hlsl !dxc_flags! -DOPENGL -E ps -T ps_6_0 -Fo build\shaders\gl_ps.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t0 0 0 0 -vkbr t1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr s0 0 3 0
-    !dxc! shaders.hlsl !dxc_flags! -DVULKAN -E vs -T vs_6_0 -Fo build\shaders\vk_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t0 0 2 0 -vkbr t1 0 3 0 -vkbr t2 0 4 0 -vkbr t3 1 6 0 -vkbr s0 0 5 0
-    !dxc! shaders.hlsl !dxc_flags! -DVULKAN -E ps -T ps_6_0 -Fo build\shaders\vk_ps.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t0 0 2 0 -vkbr t1 0 3 0 -vkbr t2 0 4 0 -vkbr t3 1 6 0 -vkbr s0 0 5 0
+    !dxc! shaders.hlsl !dxc_flags! -DOPENGL -E vs -T vs_6_0 -Fo build\shaders\gl_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr s0 0 5 0
+    !dxc! shaders.hlsl !dxc_flags! -DOPENGL -E ps -T ps_6_0 -Fo build\shaders\gl_ps.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr s0 0 5 0
+    !dxc! shaders.hlsl !dxc_flags! -DVULKAN -E vs -T vs_6_0 -Fo build\shaders\vk_vs.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
+    !dxc! shaders.hlsl !dxc_flags! -DVULKAN -E ps -T ps_6_0 -Fo build\shaders\vk_ps.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
 
     rem Asset Compilation
     asset_compiler

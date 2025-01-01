@@ -58,15 +58,15 @@ struct pixel
 
 // Vertex Shader Resources
 CONSTANT_BUFFER(frame_data, per_frame, b1);
-StructuredBuffer<vertex> vertices : register(t0);
-StructuredBuffer<uint> indices : register(t1);
+StructuredBuffer<vertex> vertices : register(t2);
+StructuredBuffer<uint> indices : register(t3);
 
 // Pixel Shader Resources
-StructuredBuffer<material_properties> properties : register(t2);
+StructuredBuffer<material_properties> properties : register(t4);
 #if defined(D3D12) || defined(VULKAN)
-Texture2D textures[] : TEXTURE : register(t3, space1);
+Texture2D textures[] : TEXTURE : register(t5, space1);
 #else
-Texture2D textures[4] : TEXTURE : register(t3);
+Texture2D textures[4] : TEXTURE : register(t5);
 #endif
 SamplerState ss : SAMPLER : register(s0);
 
