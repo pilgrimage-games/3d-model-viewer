@@ -240,9 +240,7 @@ init_app(pg_assets* assets,
                            &metadata->scaling);
     if (!ok)
     {
-        err->log(err,
-                 PG_ERROR_MAJOR,
-                 "init_app: failed to get memory for model scaling metadata");
+        PG_ERROR_MAJOR("failed to get memory for model scaling metadata");
     }
 
     // Get models metadata.
@@ -341,9 +339,7 @@ init_app(pg_assets* assets,
                       CAP(cpu_commands) * sizeof(pg_graphics_command));
         if (!ok)
         {
-            err->log(err,
-                     PG_ERROR_MAJOR,
-                     "init_app: failed to create graphics command list");
+            PG_ERROR_MAJOR("failed to create graphics command list");
         }
 
         cl->cpu_command_count = CAP(cpu_commands);
@@ -518,10 +514,7 @@ update_app(pg_assets* assets,
                                &gp);
         if (!ok)
         {
-            err->log(
-                err,
-                PG_ERROR_MAJOR,
-                "update_app: failed to get memory for graphics properties");
+            PG_ERROR_MAJOR("failed to get memory for graphics properties");
         }
 
         pg_f32_4x4 view_from_model
@@ -569,10 +562,8 @@ update_app(pg_assets* assets,
                       gp_count * sizeof(pg_graphics_properties));
         if (!ok)
         {
-            err->log(err,
-                     PG_ERROR_MAJOR,
-                     "update_app: failed to copy opaque/non-opaque graphics "
-                     "properties into unified list");
+            PG_ERROR_MAJOR("failed to copy opaque/non-opaque graphics "
+                           "properties into unified list");
         }
     }
 
@@ -590,9 +581,7 @@ update_app(pg_assets* assets,
                            &cl->gpu_commands);
     if (!ok)
     {
-        err->log(err,
-                 PG_ERROR_MAJOR,
-                 "update_app: failed to get memory for command list");
+        PG_ERROR_MAJOR("failed to get memory for command list");
     }
 
     // Generate CPU commands.
@@ -610,10 +599,8 @@ update_app(pg_assets* assets,
                                    &per_frame);
             if (!ok)
             {
-                err->log(err,
-                         PG_ERROR_MAJOR,
-                         "update_app: failed to get memory for per frame "
-                         "constant buffer");
+                PG_ERROR_MAJOR(
+                    "failed to get memory for per frame constant buffer");
             }
             *per_frame = (per_frame_cb){.world_from_model = world_from_model,
                                         .clip_from_world = clip_from_world,
@@ -660,10 +647,8 @@ update_app(pg_assets* assets,
                     &material_properties);
                 if (!ok)
                 {
-                    err->log(err,
-                             PG_ERROR_MAJOR,
-                             "update_app: failed to get memory for material "
-                             "properties");
+                    PG_ERROR_MAJOR(
+                        "failed to get memory for material properties");
                 }
 
                 for (u32 i = 0; i < model->material_count; i += 1)
@@ -704,9 +689,7 @@ update_app(pg_assets* assets,
                                    &texture_ids);
             if (!ok)
             {
-                err->log(err,
-                         PG_ERROR_MAJOR,
-                         "update_app: failed to get memory for textures");
+                PG_ERROR_MAJOR("failed to get memory for textures");
             }
 
             u32 idx = 0;
@@ -786,10 +769,8 @@ update_app(pg_assets* assets,
                                        &constants);
                 if (!ok)
                 {
-                    err->log(err,
-                             PG_ERROR_MAJOR,
-                             "update_app: failed to get memory for constants "
-                             "constant buffer");
+                    PG_ERROR_MAJOR(
+                        "failed to get memory for constants constant buffer");
                 }
                 *constants = (constants_cb){
                     .material_id = gp[i].material_id,
@@ -821,10 +802,7 @@ update_app(pg_assets* assets,
                                        &texture_ids);
                 if (!ok)
                 {
-                    err->log(err,
-                             PG_ERROR_MAJOR,
-                             "get_graphics_state: failed to get memory for "
-                             "texture ids");
+                    PG_ERROR_MAJOR("failed to get memory for texture ids");
                 }
 
                 for (u32 j = 0; j < PG_TEXTURE_TYPE_COUNT; j += 1)
@@ -859,9 +837,7 @@ update_app(pg_assets* assets,
     if (cpu_command_count > max_cpu_command_count
         || gpu_command_count > max_gpu_command_count)
     {
-        err->log(err,
-                 PG_ERROR_MAJOR,
-                 "get_graphics_state: not enough memory for graphics commands");
+        PG_ERROR_MAJOR("not enough memory for graphics commands");
     }
     cl->cpu_command_count = cpu_command_count;
     cl->gpu_command_count = gpu_command_count;
