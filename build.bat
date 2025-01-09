@@ -2,8 +2,12 @@
 
 setlocal enabledelayedexpansion
 
+call %~dp0\vars.bat
+set compiler=cl
+
 set all=
 set release=
+set clean=
 :args
 if "%1" neq "" (
     if "%1"=="-a" (
@@ -12,26 +16,30 @@ if "%1" neq "" (
     if "%1"=="-r" (
         set release=1
     )
+    if "%1"=="-c" (
+        set clean=1
+    )
     if "%1"=="-ar" (
         set all=1
         set release=1
     )
-    if "%1"=="-ra" (
+    if "%1"=="-arc" (
         set all=1
         set release=1
+        set clean=1
     )
     SHIFT
     GOTO :args
 )
 
-if not exist build\ (
-	mkdir build\
+if not exist !project_dir!\build\ (
+	mkdir !project_dir!\build\
 )
 
 if defined all (
     rem Resource Compilation
     rem -fo: Set RES file path
-    rc -fo build\icon.res -nologo icon.rc
+    rc -fo !project_dir!\icon.res -nologo !project_dir!\icon.rc
 )
 
 rem -std: Set language standard to C17
@@ -45,7 +53,7 @@ rem -Fd: Set PDB file path
 rem -Fo: Set OBJ file path
 rem -diagnostics: Show column number in error/warning display info
 rem -nologo: Suppress startup banner
-set cl_flags=-std:c17 -DWINDOWS -DUNICODE -DSIMD_X86 -W4 -Zi -Oi -EHa- -GR- -Fdbuild\ -Fobuild\ -diagnostics:column -nologo
+set cl_flags=-std:c17 -DWINDOWS -DUNICODE -DSIMD_X86 -W4 -Zi -Oi -EHa- -GR- -Fd!project_dir!\build\ -Fo!project_dir!\build\ -diagnostics:column -nologo
 if defined release (
     rem -O2: Enable performance optimizations
     rem -MT: Statically link MSVC CRT
@@ -65,19 +73,19 @@ rem -OPT: Remove unreferenced functions and data, disable identical COMDAT foldi
 set link_flags=-DEBUG:FULL -INCREMENTAL:NO -OPT:REF,NOICF
 
 rem -I: Set include dir path
-set cl_flags=!cl_flags! -I..\game-development\common-library\ -I%VULKAN_SDK%\Include\
+set cl_flags=!cl_flags! -I!common_lib_path!\ -I!VULKAN_SDK!\Include\
 rem -LIBPATH: Set library dir path
-set link_flags=!link_flags! -LIBPATH:..\game-development\common-library\imgui\deps\ -LIBPATH:%VULKAN_SDK%\Lib\
+set link_flags=!link_flags! -LIBPATH:!common_lib_path!\imgui\deps\ -LIBPATH:!VULKAN_SDK!\Lib\
 
 rem -link: Set linker flags
 rem -OUT: Set output file path
-cl 3d_model_viewer.c build\icon.res !cl_flags! -link !link_flags! -OUT:build\3d_model_viewer.exe
+!compiler! !project_dir!\!project_name!.c !project_dir!\icon.res !cl_flags! -link !link_flags! -OUT:!project_dir!\build\!project_name!.exe
 
 if defined all (
     rem Shader Compilation
 
-    if not exist build\shaders\ (
-        mkdir build\shaders\
+    if not exist !project_dir!\build\shaders\ (
+        mkdir !project_dir!\build\shaders\
     )
 
     set dxc=!VULKAN_SDK!\Bin\dxc
@@ -102,10 +110,10 @@ if defined all (
     rem -E: Set entrypoint name
     rem -T: Set shader target profile
     rem -Fo: Set output file path
-    fxc shaders.hlsl !fxc_flags! -DD3D11 -E vs -T vs_5_0 -Fo build\shaders\d3d11_vs.dxbc > nul
-    fxc shaders.hlsl !fxc_flags! -DD3D11 -E ps -T ps_5_0 -Fo build\shaders\d3d11_ps.dxbc > nul
-    fxc shaders.hlsl !fxc_flags! -DD3D12 -E vs -T vs_5_1 -Fo build\shaders\d3d12_vs.dxbc > nul
-    fxc shaders.hlsl !fxc_flags! -DD3D12 -E ps -T ps_5_1 -Fo build\shaders\d3d12_ps.dxbc > nul
+    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D11 -E vs -T vs_5_0 -Fo !project_dir!\build\shaders\d3d11_vs.dxbc > nul
+    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D11 -E ps -T ps_5_0 -Fo !project_dir!\build\shaders\d3d11_ps.dxbc > nul
+    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D12 -E vs -T vs_5_1 -Fo !project_dir!\build\shaders\d3d12_vs.dxbc > nul
+    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D12 -E ps -T ps_5_1 -Fo !project_dir!\build\shaders\d3d12_ps.dxbc > nul
 
     rem -Zpr: Pack matrices in row-major
     rem -Ges: Enable strict mode
@@ -130,13 +138,25 @@ if defined all (
     rem -T: Set shader target profile
     rem -Fo: Set output file path
     rem -vkbr a b c d: Assign HLSL register (a) in space (b) to binding (c) in descriptor set (d)
-    !dxc! shaders.hlsl !dxc_flags! -DOPENGL -E vs -T vs_6_0 -Fo build\shaders\gl_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr s0 0 5 0
-    !dxc! shaders.hlsl !dxc_flags! -DOPENGL -E ps -T ps_6_0 -Fo build\shaders\gl_ps.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr s0 0 5 0
-    !dxc! shaders.hlsl !dxc_flags! -DVULKAN -E vs -T vs_6_0 -Fo build\shaders\vk_vs.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
-    !dxc! shaders.hlsl !dxc_flags! -DVULKAN -E ps -T ps_6_0 -Fo build\shaders\vk_ps.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
+    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DOPENGL -E vs -T vs_6_0 -Fo !project_dir!\build\shaders\gl_vs.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr s0 0 5 0
+    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DOPENGL -E ps -T ps_6_0 -Fo !project_dir!\build\shaders\gl_ps.spv -vkbr b0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr s0 0 5 0
+    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DVULKAN -E vs -T vs_6_0 -Fo !project_dir!\build\shaders\vk_vs.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
+    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DVULKAN -E ps -T ps_6_0 -Fo !project_dir!\build\shaders\vk_ps.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
 
     rem Asset Compilation
+    pushd !project_dir!\
     asset_compiler
+    popd
+)
+
+if defined clean (
+    pushd !project_dir!\build\
+    attrib +r *.exe
+    attrib +r *.pga
+    del /q * > nul 2> nul
+    attrib -r *.exe
+    attrib -r *.pga
+    popd
 )
 
 endlocal

@@ -1,5 +1,11 @@
 @echo off
 
-pushd build\
-start "" 3d_model_viewer.exe
+setlocal enabledelayedexpansion
+
+call %~dp0\vars.bat
+
+pushd !project_dir!\build\
+start "" !project_name!.exe
 popd
+
+endlocal
