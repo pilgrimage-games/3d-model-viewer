@@ -65,7 +65,7 @@ if defined release (
     rem -wd4189: Disable "local variable initialized but not referenced" warning
     rem -fsanitize: Enable address sanitizer
     set cl_flags=!cl_flags! -DDEBUG -MTd -sdl -wd4100 -wd4189
-    set cl_flags=!cl_flags! -fsanitize=address
+    REM set cl_flags=!cl_flags! -fsanitize=address
 )
 rem -DEBUG: Generate full debug info
 rem -INCREMENTAL: Disable incremental linking
