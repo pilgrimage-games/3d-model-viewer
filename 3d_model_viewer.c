@@ -88,10 +88,10 @@ GLOBAL c8* model_names[] = {"None",
 GLOBAL pg_config config = {.gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
                            .simulation_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
-                           .permanent_mem_size = 1250u * PG_MEBIBYTE,
-                           .transient_mem_size = 100u * PG_KIBIBYTE,
-                           .gfx_cpu_mem_size = 500u * PG_MEBIBYTE,
-                           .gfx_gpu_mem_size = 750u * PG_MEBIBYTE};
+                           .permanent_mem_size = 2048u * PG_MEBIBYTE,
+                           .transient_mem_size = 128u * PG_KIBIBYTE,
+                           .gfx_cpu_mem_size = 512u * PG_MEBIBYTE,
+                           .gfx_gpu_mem_size = 1024u * PG_MEBIBYTE};
 
 GLOBAL application_state app_state
     = {.vsync = true,
@@ -329,6 +329,11 @@ init_app(pg_assets* assets,
                    .elem_count = metadata->max_material_count,
                    .elem_size = sizeof(pg_asset_material_properties)}}};
 
+        pg_graphics_command gpu_commands[]
+            = {{.type = PG_GRAPHICS_COMMAND_TYPE_DESCRIBE_RENDER_PASS,
+                .describe_render_pass
+                = {.render_target_srgb = true, .depth_buffer_bit_count = 32}}};
+
         ok &= pg_scratch_alloc(permanent_mem,
                                CAP(cpu_commands) * sizeof(pg_graphics_command),
                                alignof(pg_graphics_command),
@@ -337,13 +342,21 @@ init_app(pg_assets* assets,
                       CAP(cpu_commands) * sizeof(pg_graphics_command),
                       cl->cpu_commands,
                       CAP(cpu_commands) * sizeof(pg_graphics_command));
+        ok &= pg_scratch_alloc(permanent_mem,
+                               CAP(gpu_commands) * sizeof(pg_graphics_command),
+                               alignof(pg_graphics_command),
+                               &cl->gpu_commands);
+        ok &= pg_copy(gpu_commands,
+                      CAP(gpu_commands) * sizeof(pg_graphics_command),
+                      cl->gpu_commands,
+                      CAP(gpu_commands) * sizeof(pg_graphics_command));
         if (!ok)
         {
             PG_ERROR_MAJOR("failed to create graphics command list");
         }
 
         cl->cpu_command_count = CAP(cpu_commands);
-        cl->gpu_command_count = 0;
+        cl->gpu_command_count = CAP(gpu_commands);
     }
 
     reset_view();
@@ -671,10 +684,9 @@ update_app(pg_assets* assets,
     // Generate GPU commands.
     u32 gpu_command_count = 0;
     {
+        // Fetch textures for new model.
         if (metadata->model_id_last_frame != app_state.model_id)
         {
-            // Fetch textures for new model.
-
             u32 texture_count = model->material_count * PG_TEXTURE_TYPE_COUNT;
 
             pg_asset_texture* textures;
