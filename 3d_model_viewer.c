@@ -365,10 +365,10 @@ update_app(pg_assets* assets,
     pg_f32_2x cursor_delta = {0};
     {
         // Left/Up: Previous Model
-        if (pg_button_pressed(&input->kbd.left, config.input_repeat_rate)
-            || pg_button_pressed(&input->kbd.up, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].left, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].up, config.input_repeat_rate))
+        if (pg_button_active(&input->kbd.left, config.input_repeat_rate)
+            || pg_button_active(&input->kbd.up, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].left, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].up, config.input_repeat_rate))
         {
             if (app_state.model_id == 1)
             {
@@ -382,10 +382,10 @@ update_app(pg_assets* assets,
         }
 
         // Right/Down: Next Model
-        if (pg_button_pressed(&input->kbd.right, config.input_repeat_rate)
-            || pg_button_pressed(&input->kbd.down, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].right, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].down, config.input_repeat_rate))
+        if (pg_button_active(&input->kbd.right, config.input_repeat_rate)
+            || pg_button_active(&input->kbd.down, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].right, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].down, config.input_repeat_rate))
         {
             if (app_state.model_id == assets->model_count - 1)
             {
@@ -407,7 +407,7 @@ update_app(pg_assets* assets,
 #endif
 
         if (mouse_active
-            && pg_button_pressed(&input->mouse.left, app_state.frame_time))
+            && pg_button_active(&input->mouse.left, app_state.frame_time))
         {
             cursor_delta = pg_f32_2x_mul_scalar(
                 pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
