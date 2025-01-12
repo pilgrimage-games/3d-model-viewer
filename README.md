@@ -19,8 +19,9 @@ remain closed-source. See
 download and run the application.
 
 ## Features
-* Physically-based rendering (PBR) with support for albedo, metallic-roughness,
-normal, and emissive textures, as well as transparent and translucent materials
+* Physically-based rendering (PBR) with support for base color,
+metallic-roughness, normal, and emissive textures, as well as transparent and
+translucent materials
 * Custom renderers for all modern PC graphics APIs (Direct3D 11, Direct3D 12,
 OpenGL, and Vulkan)
 * Bindless rendering and root constants (Direct3D 12/Vulkan)
