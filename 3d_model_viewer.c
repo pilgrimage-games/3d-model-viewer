@@ -91,7 +91,7 @@ GLOBAL pg_config config = {.gamepad_count = 1,
                            .permanent_mem_size = 2048u * PG_MEBIBYTE,
                            .transient_mem_size = 128u * PG_KIBIBYTE,
                            .gfx_cpu_mem_size = 512u * PG_MEBIBYTE,
-                           .gfx_gpu_mem_size = 1024u * PG_MEBIBYTE};
+                           .gfx_gpu_mem_size = 512u * PG_MEBIBYTE};
 
 GLOBAL application_state app_state
     = {.vsync = true,
@@ -687,36 +687,37 @@ update_app(pg_assets* assets,
         // Fetch textures for new model.
         if (metadata->model_id_last_frame != app_state.model_id)
         {
-            u32 texture_count = model->material_count * PG_TEXTURE_TYPE_COUNT;
+            u32 max_texture_count
+                = model->material_count * PG_TEXTURE_TYPE_COUNT;
 
-            pg_asset_texture* textures;
             u32* texture_ids;
+            pg_asset_texture* textures;
             ok &= pg_scratch_alloc(transient_mem,
-                                   texture_count * sizeof(pg_asset_texture),
-                                   alignof(pg_asset_texture),
-                                   &textures);
-            ok &= pg_scratch_alloc(transient_mem,
-                                   texture_count * sizeof(u32),
+                                   max_texture_count * sizeof(u32),
                                    alignof(u32),
                                    &texture_ids);
+            ok &= pg_scratch_alloc(transient_mem,
+                                   max_texture_count * sizeof(pg_asset_texture),
+                                   alignof(pg_asset_texture),
+                                   &textures);
             if (!ok)
             {
                 PG_ERROR_MAJOR("failed to get memory for textures");
             }
 
-            u32 idx = 0;
+            u32 texture_count = 0;
             for (u32 i = 0; i < model->material_count; i += 1)
             {
-                for (u32 j = 0; j < PG_TEXTURE_TYPE_COUNT; j += 1)
+                for (u32 j = 0; j < model->materials[i].texture_count; j += 1)
                 {
-                    textures[idx] = model->materials[i].textures[j];
-                    texture_ids[idx]
-                        = (u32)pg_3d_to_1d_index(j,
-                                                 i,
-                                                 app_state.model_id,
-                                                 PG_TEXTURE_TYPE_COUNT,
-                                                 metadata->max_material_count);
-                    idx += 1;
+                    texture_ids[texture_count] = (u32)pg_3d_to_1d_index(
+                        model->materials[i].textures[j].type,
+                        i,
+                        app_state.model_id,
+                        PG_TEXTURE_TYPE_COUNT,
+                        metadata->max_material_count);
+                    textures[texture_count] = model->materials[i].textures[j];
+                    texture_count += 1;
                 }
             }
 
@@ -806,7 +807,8 @@ update_app(pg_assets* assets,
             // Set textures.
             if (gp[i].material_id != material_id)
             {
-                u32 texture_count = PG_TEXTURE_TYPE_COUNT;
+                u32 texture_count
+                    = model->materials[gp[i].material_id].texture_count;
                 u32* texture_ids;
                 ok &= pg_scratch_alloc(transient_mem,
                                        texture_count * sizeof(u32),
@@ -817,14 +819,14 @@ update_app(pg_assets* assets,
                     PG_ERROR_MAJOR("failed to get memory for texture ids");
                 }
 
-                for (u32 j = 0; j < PG_TEXTURE_TYPE_COUNT; j += 1)
+                for (u32 j = 0; j < texture_count; j += 1)
                 {
-                    texture_ids[j]
-                        = (u32)pg_3d_to_1d_index(j,
-                                                 gp[i].material_id,
-                                                 gp[i].art_id,
-                                                 PG_TEXTURE_TYPE_COUNT,
-                                                 metadata->max_material_count);
+                    texture_ids[j] = (u32)pg_3d_to_1d_index(
+                        model->materials[gp[i].material_id].textures[j].type,
+                        gp[i].material_id,
+                        gp[i].art_id,
+                        PG_TEXTURE_TYPE_COUNT,
+                        metadata->max_material_count);
                 }
 
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){

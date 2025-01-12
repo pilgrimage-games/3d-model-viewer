@@ -37,12 +37,13 @@ struct vertex
 
 struct material_properties
 {
-    uint normal_mapping;
+    uint has_texture;
     float alpha_cutoff;
     float metallic_factor;
     float roughness_factor;
-    uint alpha_mode;
+    float3 emissive_factor;
     float4 base_color_factor;
+    uint alpha_mode;
 };
 
 struct pixel
@@ -153,38 +154,79 @@ geometry_smith(float n_dot_l, float n_dot_v, float roughness)
 
 // NOTE: pg_alpha_mode values: PG_AM_OPAQUE (0), PG_AM_MASK (1), PG_AM_BLEND (2)
 float4
-get_albedo(pixel p, uint tex_offset, material_properties mp)
+get_base_color(pixel p, uint tex_offset, material_properties mp)
 {
-    float4 albedo = textures[tex_offset + 0].Sample(ss, p.tex_coord)
-                    * mp.base_color_factor;
+    float4 base_color = mp.base_color_factor;
+    if (mp.has_texture & (1 << 0))
+    {
+        base_color *= textures[tex_offset + 0].Sample(ss, p.tex_coord);
+    }
 
-    if (mp.alpha_mode == 1 && albedo.a < mp.alpha_cutoff)
+    if (mp.alpha_mode == 1 && base_color.a < mp.alpha_cutoff)
     {
         discard;
     }
-
     uint has_alpha = max(mp.alpha_mode, 1) - 1;
-    albedo.a = lerp(1.0f, albedo.a, has_alpha);
+    base_color.a = lerp(1.0f, base_color.a, has_alpha);
 
-    return albedo;
+    return base_color;
+}
+
+float
+get_metallic(pixel p, uint tex_offset, material_properties mp)
+{
+    float metallic = mp.metallic_factor;
+    if (mp.has_texture & (1 << 1))
+    {
+        metallic *= textures[tex_offset + 1].Sample(ss, p.tex_coord).b;
+    }
+
+    return metallic;
+}
+
+float
+get_roughness(pixel p, uint tex_offset, material_properties mp)
+{
+    float roughness = mp.roughness_factor;
+    if (mp.has_texture & (1 << 1))
+    {
+        roughness *= textures[tex_offset + 1].Sample(ss, p.tex_coord).g;
+    }
+
+    return roughness;
 }
 
 float3
 get_normal(pixel p, uint tex_offset, material_properties mp)
 {
-    // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed from
-    // tangent space to world space.
-    // NOTE: glTF normal maps are +Y/Green-up.
-    // green on bottom = hole, green on top = bump
-    float3 normal = textures[tex_offset + 2].Sample(ss, p.tex_coord).rgb;
-    normal = (normal * 2.0f) - 1.0f;
-    float3x3 tbn = transpose(float3x3(p.tangent, p.bitangent, p.normal));
-    normal = mul(tbn, normal);
+    if (mp.has_texture & (1 << 2))
+    {
+        // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed from
+        // tangent space to world space.
+        // NOTE: glTF normal maps are +Y/Green-up.
+        // green on bottom = hole, green on top = bump
+        float3 normal = textures[tex_offset + 2].Sample(ss, p.tex_coord).rgb;
+        normal = (normal * 2.0f) - 1.0f;
+        float3x3 tbn = transpose(float3x3(p.tangent, p.bitangent, p.normal));
+        return mul(tbn, normal);
+    }
+    else
+    {
+        // If no normal texture, use world-space vertex normal.
+        return p.normal;
+    }
+}
 
-    // If normal mapping is disabled, use world-space vertex normal.
-    normal = lerp(p.normal, normal, mp.normal_mapping);
+float3
+get_emissive(pixel p, uint tex_offset, material_properties mp)
+{
+    float3 emissive = mp.emissive_factor;
+    if (mp.has_texture & (1 << 3))
+    {
+        emissive *= textures[tex_offset + 3].Sample(ss, p.tex_coord).rgb;
+    }
 
-    return normal;
+    return emissive;
 }
 
 float4
@@ -198,13 +240,11 @@ ps(pixel p) : SV_TARGET
 #else
     uint tex_offset = 0;
 #endif
-    float4 albedo = get_albedo(p, tex_offset, mp);
-    float roughness = textures[tex_offset + 1].Sample(ss, p.tex_coord).g
-                      * mp.roughness_factor;
-    float metallic = textures[tex_offset + 1].Sample(ss, p.tex_coord).b
-                     * mp.metallic_factor;
+    float4 base_color = get_base_color(p, tex_offset, mp);
+    float metallic = get_metallic(p, tex_offset, mp);
+    float roughness = get_roughness(p, tex_offset, mp);
     float3 normal = get_normal(p, tex_offset, mp);
-    float3 emissive = textures[tex_offset + 3].Sample(ss, p.tex_coord).rgb;
+    float3 emissive = get_emissive(p, tex_offset, mp);
 
     // Microfacet BRDF using Cook-Torrance model
     // The bidirectional reflective distribution function (BRDF) is the
@@ -221,14 +261,14 @@ ps(pixel p) : SV_TARGET
     float n_dot_h = max(0.0f, dot(n, h));
     float v_dot_h = max(0.0f, dot(v, h));
     float3 dielectric_fresnel_factor = float3(0.04f, 0.04f, 0.04f);
-    float3 f0 = lerp(dielectric_fresnel_factor, albedo.rgb, metallic);
+    float3 f0 = lerp(dielectric_fresnel_factor, base_color.rgb, metallic);
     float3 f = fresnel_schlick(v_dot_h, f0);
     float d = ndf_ggx(n_dot_h, roughness);
     float g = geometry_smith(n_dot_l, n_dot_v, roughness);
     float3 refracted_light
         = float3(1.0f, 1.0f, 1.0f) - f; // all non-reflected light
     float dielectric = 1.0f - metallic; // diffuse BRDF = 0.0f for metals
-    float3 diffuse_brdf = (albedo.rgb * refracted_light * dielectric) / PI;
+    float3 diffuse_brdf = (base_color.rgb * refracted_light * dielectric) / PI;
     float3 specular_brdf = (f * d * g) / max(0.0001f, 4.0f * n_dot_l * n_dot_v);
     float3 brdf = diffuse_brdf + specular_brdf;
 
@@ -236,9 +276,9 @@ ps(pixel p) : SV_TARGET
     float attenuation = 1.0f; // attenuation = 1.0f for directional lights
     float3 radiance = light_color * attenuation;
 
-    float3 ambient = albedo.rgb * float3(0.35f, 0.35f, 0.35f);
+    float3 ambient = base_color.rgb * float3(0.35f, 0.35f, 0.35f);
 
     float3 color = (brdf * radiance * n_dot_l) + ambient + emissive;
 
-    return float4(color, albedo.a);
+    return float4(color, base_color.a);
 }
