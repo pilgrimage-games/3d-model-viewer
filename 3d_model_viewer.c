@@ -88,10 +88,10 @@ GLOBAL c8* model_names[] = {"None",
 GLOBAL pg_config config = {.gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
                            .simulation_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
-                           .permanent_mem_size = 1250u * PG_MEBIBYTE,
-                           .transient_mem_size = 100u * PG_KIBIBYTE,
-                           .gfx_cpu_mem_size = 500u * PG_MEBIBYTE,
-                           .gfx_gpu_mem_size = 750u * PG_MEBIBYTE};
+                           .permanent_mem_size = 2048u * PG_MEBIBYTE,
+                           .transient_mem_size = 128u * PG_KIBIBYTE,
+                           .gfx_cpu_mem_size = 512u * PG_MEBIBYTE,
+                           .gfx_gpu_mem_size = 1024u * PG_MEBIBYTE};
 
 GLOBAL application_state app_state
     = {.vsync = true,
@@ -329,6 +329,11 @@ init_app(pg_assets* assets,
                    .elem_count = metadata->max_material_count,
                    .elem_size = sizeof(pg_asset_material_properties)}}};
 
+        pg_graphics_command gpu_commands[]
+            = {{.type = PG_GRAPHICS_COMMAND_TYPE_DESCRIBE_RENDER_PASS,
+                .describe_render_pass
+                = {.render_target_srgb = true, .depth_buffer_bit_count = 32}}};
+
         ok &= pg_scratch_alloc(permanent_mem,
                                CAP(cpu_commands) * sizeof(pg_graphics_command),
                                alignof(pg_graphics_command),
@@ -337,13 +342,21 @@ init_app(pg_assets* assets,
                       CAP(cpu_commands) * sizeof(pg_graphics_command),
                       cl->cpu_commands,
                       CAP(cpu_commands) * sizeof(pg_graphics_command));
+        ok &= pg_scratch_alloc(permanent_mem,
+                               CAP(gpu_commands) * sizeof(pg_graphics_command),
+                               alignof(pg_graphics_command),
+                               &cl->gpu_commands);
+        ok &= pg_copy(gpu_commands,
+                      CAP(gpu_commands) * sizeof(pg_graphics_command),
+                      cl->gpu_commands,
+                      CAP(gpu_commands) * sizeof(pg_graphics_command));
         if (!ok)
         {
             PG_ERROR_MAJOR("failed to create graphics command list");
         }
 
         cl->cpu_command_count = CAP(cpu_commands);
-        cl->gpu_command_count = 0;
+        cl->gpu_command_count = CAP(gpu_commands);
     }
 
     reset_view();
@@ -365,10 +378,10 @@ update_app(pg_assets* assets,
     pg_f32_2x cursor_delta = {0};
     {
         // Left/Up: Previous Model
-        if (pg_button_pressed(&input->kbd.left, config.input_repeat_rate)
-            || pg_button_pressed(&input->kbd.up, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].left, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].up, config.input_repeat_rate))
+        if (pg_button_active(&input->kbd.left, config.input_repeat_rate)
+            || pg_button_active(&input->kbd.up, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].left, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].up, config.input_repeat_rate))
         {
             if (app_state.model_id == 1)
             {
@@ -382,10 +395,10 @@ update_app(pg_assets* assets,
         }
 
         // Right/Down: Next Model
-        if (pg_button_pressed(&input->kbd.right, config.input_repeat_rate)
-            || pg_button_pressed(&input->kbd.down, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].right, config.input_repeat_rate)
-            || pg_button_pressed(&input->gp[0].down, config.input_repeat_rate))
+        if (pg_button_active(&input->kbd.right, config.input_repeat_rate)
+            || pg_button_active(&input->kbd.down, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].right, config.input_repeat_rate)
+            || pg_button_active(&input->gp[0].down, config.input_repeat_rate))
         {
             if (app_state.model_id == assets->model_count - 1)
             {
@@ -407,7 +420,7 @@ update_app(pg_assets* assets,
 #endif
 
         if (mouse_active
-            && pg_button_pressed(&input->mouse.left, app_state.frame_time))
+            && pg_button_active(&input->mouse.left, app_state.frame_time))
         {
             cursor_delta = pg_f32_2x_mul_scalar(
                 pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
@@ -671,10 +684,9 @@ update_app(pg_assets* assets,
     // Generate GPU commands.
     u32 gpu_command_count = 0;
     {
+        // Fetch textures for new model.
         if (metadata->model_id_last_frame != app_state.model_id)
         {
-            // Fetch textures for new model.
-
             u32 texture_count = model->material_count * PG_TEXTURE_TYPE_COUNT;
 
             pg_asset_texture* textures;
