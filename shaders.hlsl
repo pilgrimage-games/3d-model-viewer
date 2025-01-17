@@ -21,10 +21,10 @@ struct frame_data
 
 struct constants
 {
-    uint material_id;
-    uint texture_offset;
     uint vertex_offset;
     uint index_offset;
+    uint material_id;
+    uint texture_id;
 };
 
 struct vertex
@@ -236,7 +236,7 @@ ps(pixel p) : SV_TARGET
 
     // Sample textures.
 #if defined(D3D12) || defined(VULKAN)
-    uint tex_offset = per_draw.texture_offset;
+    uint tex_offset = per_draw.texture_id;
 #else
     uint tex_offset = 0;
 #endif

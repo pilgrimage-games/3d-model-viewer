@@ -30,10 +30,10 @@ typedef struct
 // This may require padding a struct member to 16 bytes.
 typedef struct
 {
-    u32 material_id;
-    u32 texture_offset;
     u32 vertex_offset;
     u32 index_offset;
+    u32 material_id;
+    u32 texture_id;
 } constants_cb;
 
 typedef struct
@@ -730,46 +730,22 @@ update_app(pg_assets* assets,
             gpu_command_count += 1;
         }
 
-        // Set per frame CB.
-        cl->gpu_commands[gpu_command_count]
-            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
-                                    .set_buffer = {.buffer_id = 0}};
-        gpu_command_count += 1;
-
-        // Set vertex SB.
-        cl->gpu_commands[gpu_command_count]
-            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
-                                    .set_buffer = {.buffer_id = 1}};
-        gpu_command_count += 1;
-
-        // Set index SB.
-        cl->gpu_commands[gpu_command_count]
-            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
-                                    .set_buffer = {.buffer_id = 2}};
-        gpu_command_count += 1;
-
-        // Set material properties SB.
-        cl->gpu_commands[gpu_command_count]
-            = (pg_graphics_command){.type = PG_GRAPHICS_COMMAND_TYPE_SET_BUFFER,
-                                    .set_buffer = {.buffer_id = 3}};
-        gpu_command_count += 1;
-
         u32 material_id = metadata->max_material_count;
         for (u32 i = 0; i < gp_count; i += 1)
         {
-            // Set draw properties.
+            // Set pipeline state.
             if (i == 0)
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
-                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_DRAW_PROPERTIES,
-                    .set_draw_properties = {.opaque = true}};
+                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
+                    .set_pipeline_state = {.opaque = true}};
                 gpu_command_count += 1;
             }
             else if (i == opaque_gp_count)
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
-                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_DRAW_PROPERTIES,
-                    .set_draw_properties = {.opaque = false}};
+                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
+                    .set_pipeline_state = {.opaque = false}};
                 gpu_command_count += 1;
             }
 
@@ -786,59 +762,31 @@ update_app(pg_assets* assets,
                         "failed to get memory for constants constant buffer");
                 }
                 *constants = (constants_cb){
+                    .vertex_offset = model->meshes[gp[i].mesh_id].vertex_offset,
+                    .index_offset = model->meshes[gp[i].mesh_id].index_offset,
                     .material_id = gp[i].material_id,
-                    .texture_offset
+                    .texture_id
                     = (u32)pg_3d_to_1d_index(0,
                                              gp[i].material_id,
                                              gp[i].art_id,
                                              PG_TEXTURE_TYPE_COUNT,
-                                             metadata->max_material_count),
-                    .vertex_offset = model->meshes[gp[i].mesh_id].vertex_offset,
-                    .index_offset = model->meshes[gp[i].mesh_id].index_offset};
+                                             metadata->max_material_count)};
 
+                u32 texture_count = 0;
+                if (gp[i].material_id != material_id)
+                {
+                    texture_count = PG_TEXTURE_TYPE_COUNT;
+                    material_id = gp[i].material_id;
+                }
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_CONSTANTS,
                     .set_constants
-                    = {.constant_count = sizeof(constants_cb) / sizeof(u32),
+                    = {.texture_id_idx
+                       = offsetof(constants_cb, texture_id) / sizeof(u32),
+                       .texture_count = texture_count,
+                       .constant_count = sizeof(constants_cb) / sizeof(u32),
                        .constants = (u32*)constants}};
                 gpu_command_count += 1;
-            }
-
-            // Set textures.
-            if (gp[i].material_id != material_id)
-            {
-                u32 texture_count = PG_TEXTURE_TYPE_COUNT;
-                u32* texture_ids;
-                ok &= pg_scratch_alloc(transient_mem,
-                                       texture_count * sizeof(u32),
-                                       alignof(u32),
-                                       &texture_ids);
-                if (!ok)
-                {
-                    PG_ERROR_MAJOR("failed to get memory for texture ids");
-                }
-
-                for (u32 j = 0;
-                     j < model->materials[gp[i].material_id].texture_count;
-                     j += 1)
-                {
-                    pg_texture_type t
-                        = model->materials[gp[i].material_id].textures[j].type;
-                    texture_ids[t]
-                        = (u32)pg_3d_to_1d_index(t,
-                                                 gp[i].material_id,
-                                                 gp[i].art_id,
-                                                 PG_TEXTURE_TYPE_COUNT,
-                                                 metadata->max_material_count);
-                }
-
-                cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
-                    .type = PG_GRAPHICS_COMMAND_TYPE_SET_TEXTURES,
-                    .set_textures = {.texture_count = texture_count,
-                                     .texture_ids = texture_ids}};
-                gpu_command_count += 1;
-
-                material_id = gp[i].material_id;
             }
 
             // Draw.
@@ -851,10 +799,13 @@ update_app(pg_assets* assets,
         }
     }
 
-    if (cpu_command_count > max_cpu_command_count
-        || gpu_command_count > max_gpu_command_count)
+    if (cpu_command_count > max_cpu_command_count)
     {
-        PG_ERROR_MAJOR("not enough memory for graphics commands");
+        PG_ERROR_MAJOR("not enough memory for CPU graphics commands");
+    }
+    if (gpu_command_count > max_gpu_command_count)
+    {
+        PG_ERROR_MAJOR("not enough memory for GPU graphics commands");
     }
     cl->cpu_command_count = cpu_command_count;
     cl->gpu_command_count = gpu_command_count;
