@@ -422,9 +422,9 @@ update_app(pg_assets* assets,
         if (mouse_active
             && pg_button_active(&input->mouse.left, app_state.frame_time))
         {
-            cursor_delta = pg_f32_2x_mul_scalar(
+            cursor_delta = pg_f32_2x_mul(
                 pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
-                100.0f);
+                (pg_f32_2x){.x = 100.0f, .y = 100.0f});
         }
 
         if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
