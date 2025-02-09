@@ -166,8 +166,8 @@ get_base_color(pixel p, uint tex_offset, material_properties mp)
     {
         discard;
     }
-    uint has_alpha = max(mp.alpha_mode, 1) - 1;
-    base_color.a = lerp(1.0f, base_color.a, has_alpha);
+
+    base_color.a = (mp.alpha_mode == 2) ? base_color.a : 1.0f;
 
     return base_color;
 }
