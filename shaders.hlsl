@@ -30,9 +30,10 @@ struct constants
 struct vertex
 {
     float3 position;
-    float2 tex_coord;
     float3 normal;
     float4 tangent;
+    float2 tex_coord;
+    float4 color;
 };
 
 struct material_properties
@@ -48,13 +49,14 @@ struct material_properties
 
 struct pixel
 {
-    float2 tex_coord : TEX_COORD;  // texture space
+    float4 position : SV_POSITION; // clip space
     float3 normal : NORMAL;        // world space
     float3 tangent : TANGENT;      // world space
     float3 bitangent : BITANGENT;  // world space
     float3 light_dir : POSITION0;  // world space (towards target)
     float3 view_dir : POSITION1;   // world space (towards target)
-    float4 position : SV_POSITION; // clip space
+    float2 tex_coord : TEX_COORD;  // texture space
+    float4 color : COLOR0;
 };
 
 // Vertex Shader Resources
@@ -87,8 +89,6 @@ vs(uint index_id : SV_VertexID)
     p.position = mul(per_frame.clip_from_world,
                      mul(per_frame.world_from_model, float4(v.position, 1.0f)));
 
-    p.tex_coord = v.tex_coord;
-
     // NOTE: Translation is ignored by casting to a 3x3 matrix.
     // NOTE: This assumes uniform scaling. For non-uniform scaling, use the
     // inverse transpose to undo the model matrix's scale transform but
@@ -107,6 +107,9 @@ vs(uint index_id : SV_VertexID)
     p.view_dir
         = (float3)mul(per_frame.world_from_model, float4(v.position, 1.0f))
           - per_frame.camera_pos;
+
+    p.tex_coord = v.tex_coord;
+    p.color = v.color;
 
     return p;
 }
@@ -156,7 +159,7 @@ geometry_smith(float n_dot_l, float n_dot_v, float roughness)
 float4
 get_base_color(pixel p, uint tex_offset, material_properties mp)
 {
-    float4 base_color = mp.base_color_factor;
+    float4 base_color = p.color * mp.base_color_factor;
     if (mp.has_texture & (1 << 0))
     {
         base_color *= textures[tex_offset + 0].Sample(ss, p.tex_coord);

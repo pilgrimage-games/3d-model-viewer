@@ -65,6 +65,7 @@ typedef enum
 {
     MODEL_NONE,
     MODEL_BAKER_AND_THE_BRIDGE,
+    MODEL_BOX_ANIMATED,
     MODEL_CORSET,
     MODEL_DAMAGED_HELMET,
     MODEL_FTM,
@@ -77,6 +78,7 @@ typedef enum
 
 GLOBAL c8* model_names[] = {"None",
                             "Baker and the Bridge",
+                            "Box Animated",
                             "Corset",
                             "Damaged Helmet",
                             "Ftm",
