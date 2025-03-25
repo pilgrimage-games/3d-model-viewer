@@ -25,6 +25,7 @@ struct constants
     uint index_offset;
     uint material_id;
     uint texture_id;
+    float4x4 global_transform;
 };
 
 struct vertex
@@ -85,19 +86,26 @@ vs(uint index_id : SV_VertexID)
     uint vertex_id = indices[per_draw.index_offset + index_id];
     vertex v = vertices[per_draw.vertex_offset + vertex_id];
 
+    // NOTE: When multiplying the global transform, the w component must be
+    // 1.0f for position vectors and 0.0f for direction vectors.
     pixel p;
-    p.position = mul(per_frame.clip_from_world,
-                     mul(per_frame.world_from_model, float4(v.position, 1.0f)));
+    p.position
+        = mul(per_frame.clip_from_world,
+              mul(per_frame.world_from_model,
+                  mul(per_draw.global_transform, float4(v.position, 1.0f))));
 
     // NOTE: Translation is ignored by casting to a 3x3 matrix.
     // NOTE: This assumes uniform scaling. For non-uniform scaling, use the
     // inverse transpose to undo the model matrix's scale transform but
     // preserve its rotation.
-    p.normal = normalize(mul((float3x3)per_frame.world_from_model, v.normal));
-    p.tangent
-        = normalize(mul((float3x3)per_frame.world_from_model, v.tangent.xyz));
+    p.normal = normalize(
+        mul((float3x3)per_frame.world_from_model,
+            mul(per_draw.global_transform, float4(v.normal, 0.0f)).xyz));
+    p.tangent = normalize(
+        mul((float3x3)per_frame.world_from_model,
+            mul(per_draw.global_transform, float4(v.tangent.xyz, 0.0f)).xyz));
 
-    // Reorthogonalize tangent with respect to normal using Gram-Schmidt
+    // Reorthogonalize tangent with respect to normal using Gram-Schmidt.
     p.tangent = normalize(p.tangent - (dot(p.tangent, p.normal) * p.normal));
 
     p.bitangent = normalize(mul(cross(p.normal, p.tangent), v.tangent.w));
@@ -204,10 +212,9 @@ get_normal(pixel p, uint tex_offset, material_properties mp)
 {
     if (mp.has_texture & (1 << 2))
     {
-        // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed from
-        // tangent space to world space.
-        // NOTE: glTF normal maps are +Y/Green-up.
-        // green on bottom = hole, green on top = bump
+        // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed
+        // from tangent space to world space. NOTE: glTF normal maps are
+        // +Y/Green-up. green on bottom = hole, green on top = bump
         float3 normal = textures[tex_offset + 2].Sample(ss, p.tex_coord).rgb;
         normal = (normal * 2.0f) - 1.0f;
         float3x3 tbn = transpose(float3x3(p.tangent, p.bitangent, p.normal));
@@ -233,7 +240,8 @@ get_emissive(pixel p, uint tex_offset, material_properties mp)
 }
 
 float4
-ps(pixel p) : SV_TARGET
+ps(pixel p) :
+    SV_TARGET
 {
     material_properties mp = properties[per_draw.material_id];
 

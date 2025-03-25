@@ -34,6 +34,7 @@ typedef struct
     u32 index_offset;
     u32 material_id;
     u32 texture_id;
+    pg_f32_4x4 global_transform;
 } constants_cb;
 
 typedef struct
@@ -57,8 +58,6 @@ typedef struct
     u32 max_vertex_count;
     u32 max_index_count;
     u32 max_material_count;
-    u32 max_mesh_count;
-    pg_f32_3x* scaling;
 } models_metadata;
 
 typedef enum
@@ -90,8 +89,8 @@ GLOBAL c8* model_names[] = {"None",
 GLOBAL pg_config config = {.gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
                            .simulation_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
-                           .permanent_mem_size = 2048u * PG_MEBIBYTE,
-                           .transient_mem_size = 128u * PG_KIBIBYTE,
+                           .permanent_mem_size = 2u * PG_GIBIBYTE,
+                           .transient_mem_size = 64u * PG_MEBIBYTE,
                            .gfx_cpu_mem_size = 512u * PG_MEBIBYTE,
                            .gfx_gpu_mem_size = 512u * PG_MEBIBYTE};
 
@@ -115,11 +114,13 @@ reset_view(void)
         case MODEL_BAKER_AND_THE_BRIDGE:
         {
             app_state.camera.position.y = PG_PI / 3.0f;
+            app_state.camera.position.z = 100.0f;
             break;
         }
         case MODEL_CORSET:
         {
             app_state.camera.position.y = PG_PI / 3.0f;
+            app_state.camera.position.z = 0.3f;
             break;
         }
         case MODEL_DAMAGED_HELMET:
@@ -130,29 +131,33 @@ reset_view(void)
         {
             app_state.rotation.y = 135.0f;
             app_state.camera.position.y = PG_PI / 2.5f;
-            app_state.camera.position.z = 1.25f;
+            app_state.camera.position.z = 45.0f;
             break;
         }
         case MODEL_METAL_ROUGH_SPHERES:
         {
+            app_state.camera.position.z = 30.0f;
             break;
         }
         case MODEL_PLAYSTATION_1:
         {
             app_state.rotation.x = 90.0f;
             app_state.rotation.z = 270.0f;
+            app_state.camera.position.z = 12.0f;
             break;
         }
         case MODEL_SHIP_IN_A_BOTTLE:
         {
             app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
             app_state.camera.position.y = PG_PI / 2.0f;
+            app_state.camera.position.z = 10.0f;
             break;
         }
         case MODEL_WATER_BOTTLE:
         {
             app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
             app_state.camera.position.y = PG_PI / 2.0f;
+            app_state.camera.position.z = 1.0f;
             break;
         }
     }
@@ -236,15 +241,6 @@ init_app(pg_assets* assets,
 {
     b8 ok = true;
 
-    ok &= pg_scratch_alloc(permanent_mem,
-                           assets->model_count * sizeof(pg_f32_3x),
-                           alignof(pg_f32_3x),
-                           &metadata->scaling);
-    if (!ok)
-    {
-        PG_ERROR_MAJOR("failed to get memory for model scaling metadata");
-    }
-
     // Get models metadata.
     for (u32 i = 0; i < assets->model_count; i += 1)
     {
@@ -260,41 +256,10 @@ init_app(pg_assets* assets,
             metadata->max_index_count = model->index_count;
         }
 
-        if (model->mesh_count > metadata->max_mesh_count)
-        {
-            metadata->max_mesh_count = model->mesh_count;
-        }
-
         if (model->material_count > metadata->max_material_count)
         {
             metadata->max_material_count = model->material_count;
         }
-
-        f32 normalized_scale = 0.0f;
-        for (u32 j = 0; j < model->mesh_count; j += 1)
-        {
-            for (u32 k = 0; k < CAP(model->meshes[j].min_position.e); k += 1)
-            {
-                if (-model->meshes[j].min_position.e[k] > normalized_scale)
-                {
-                    normalized_scale = -model->meshes[j].min_position.e[k];
-                }
-            }
-
-            for (u32 k = 0; k < CAP(model->meshes[j].max_position.e); k += 1)
-            {
-                if (model->meshes[j].max_position.e[k] > normalized_scale)
-                {
-                    normalized_scale = model->meshes[j].max_position.e[k];
-                }
-            }
-        }
-
-        normalized_scale
-            = (normalized_scale == 0.0f) ? 1.0f : 1.0f / normalized_scale;
-        metadata->scaling[i] = (pg_f32_3x){.x = normalized_scale,
-                                           .y = normalized_scale,
-                                           .z = normalized_scale};
     }
 
     // Create initialization command list.
@@ -493,96 +458,30 @@ update_app(pg_assets* assets,
     pg_f32_3x camera_position
         = pg_camera_get_cartesian_position(&app_state.camera);
     pg_f32_4x4 world_from_model
-        = pg_f32_4x4_world_from_model(metadata->scaling[app_state.model_id],
+        = pg_f32_4x4_world_from_model((pg_f32_3x){0},
                                       app_state.rotation,
                                       (pg_f32_3x){0});
     pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
         27.0f,
         render_res.width / render_res.height,
         0.1f,
-        100.0f);
+        500.0f);
     pg_f32_4x4 view_from_world
         = pg_f32_4x4_view_from_world(camera_position,
                                      app_state.camera.focal_point,
                                      app_state.camera.up_axis);
+    pg_f32_4x4 view_from_model
+        = pg_f32_4x4_mul(view_from_world, world_from_model);
 
-    // Create and sort graphics properties.
-    pg_graphics_properties* opaque_gp;
-    pg_graphics_properties* non_opaque_gp;
-    pg_graphics_properties* gp;
-    u32 opaque_gp_count = 0;
-    u32 non_opaque_gp_count = 0;
-    u32 gp_count = 0;
-    {
-        ok &= pg_scratch_alloc(transient_mem,
-                               model->mesh_count
-                                   * sizeof(pg_graphics_properties),
-                               alignof(pg_graphics_properties),
-                               &opaque_gp);
-        ok &= pg_scratch_alloc(transient_mem,
-                               model->mesh_count
-                                   * sizeof(pg_graphics_properties),
-                               alignof(pg_graphics_properties),
-                               &non_opaque_gp);
-        ok &= pg_scratch_alloc(transient_mem,
-                               model->mesh_count
-                                   * sizeof(pg_graphics_properties),
-                               alignof(pg_graphics_properties),
-                               &gp);
-        if (!ok)
-        {
-            PG_ERROR_MAJOR("failed to get memory for graphics properties");
-        }
-
-        pg_f32_4x4 view_from_model
-            = pg_f32_4x4_mul(view_from_world, world_from_model);
-        for (u32 i = 0; i < model->mesh_count; i += 1)
-        {
-            u32 material_id = model->meshes[i].material_id;
-            pg_graphics_properties curr_gp = {
-                .art_id = app_state.model_id,
-                .mesh_id = i,
-                .material_id = material_id,
-                .camera_dist = pg_asset_mesh_get_camera_dist(model->meshes + i,
-                                                             view_from_model)};
-
-            if (model->materials[material_id].properties.alpha_mode
-                == PG_ALPHA_MODE_OPAQUE)
-            {
-                opaque_gp[opaque_gp_count] = curr_gp;
-                opaque_gp_count += 1;
-            }
-            else
-            {
-                non_opaque_gp[non_opaque_gp_count] = curr_gp;
-                non_opaque_gp_count += 1;
-            }
-        }
-
-        pg_sort(opaque_gp,
-                opaque_gp_count,
-                sizeof(pg_graphics_properties),
-                &pg_sort_graphics_properties_front_to_back);
-        pg_sort(non_opaque_gp,
-                non_opaque_gp_count,
-                sizeof(pg_graphics_properties),
-                &pg_sort_graphics_properties_back_to_front);
-
-        gp_count = opaque_gp_count + non_opaque_gp_count;
-        ok &= pg_copy(opaque_gp,
-                      opaque_gp_count * sizeof(pg_graphics_properties),
-                      gp,
-                      gp_count * sizeof(pg_graphics_properties));
-        ok &= pg_copy(non_opaque_gp,
-                      non_opaque_gp_count * sizeof(pg_graphics_properties),
-                      gp + opaque_gp_count,
-                      gp_count * sizeof(pg_graphics_properties));
-        if (!ok)
-        {
-            PG_ERROR_MAJOR("failed to copy opaque/non-opaque graphics "
-                           "properties into unified list");
-        }
-    }
+    // Get drawables.
+    pg_graphics_drawables drawables = {0};
+    pg_asset_get_drawables(model,
+                           &app_state.model_id,
+                           1,
+                           &view_from_model,
+                           transient_mem,
+                           &drawables,
+                           err);
 
     // Allocate memory for command list.
     *cl = (pg_graphics_command_list){0};
@@ -633,7 +532,7 @@ update_app(pg_assets* assets,
             cpu_command_count += 1;
         }
 
-        if (metadata->model_id_last_frame != app_state.model_id)
+        if (app_state.model_id != metadata->model_id_last_frame)
         {
             // Update vertex SB.
             cl->cpu_commands[cpu_command_count] = (pg_graphics_command){
@@ -689,7 +588,7 @@ update_app(pg_assets* assets,
     u32 gpu_command_count = 0;
     {
         // Fetch textures for new model.
-        if (metadata->model_id_last_frame != app_state.model_id)
+        if (app_state.model_id != metadata->model_id_last_frame)
         {
             u32 max_texture_count
                 = model->material_count * PG_TEXTURE_TYPE_COUNT;
@@ -735,8 +634,10 @@ update_app(pg_assets* assets,
         }
 
         u32 material_id = metadata->max_material_count;
-        for (u32 i = 0; i < gp_count; i += 1)
+        for (u32 i = 0; i < drawables.final_drawable_count; i += 1)
         {
+            pg_graphics_drawable* d = &drawables.final_drawables[i];
+
             // Set pipeline state.
             if (i == 0)
             {
@@ -745,7 +646,7 @@ update_app(pg_assets* assets,
                     .set_pipeline_state = {.opaque = true}};
                 gpu_command_count += 1;
             }
-            else if (i == opaque_gp_count)
+            else if (i == drawables.opaque_drawable_count)
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
@@ -765,22 +666,23 @@ update_app(pg_assets* assets,
                     PG_ERROR_MAJOR(
                         "failed to get memory for constants constant buffer");
                 }
-                *constants = (constants_cb){
-                    .vertex_offset = model->meshes[gp[i].mesh_id].vertex_offset,
-                    .index_offset = model->meshes[gp[i].mesh_id].index_offset,
-                    .material_id = gp[i].material_id,
-                    .texture_id
-                    = (u32)pg_3d_to_1d_index(0,
-                                             gp[i].material_id,
-                                             gp[i].art_id,
-                                             PG_TEXTURE_TYPE_COUNT,
-                                             metadata->max_material_count)};
+                *constants
+                    = (constants_cb){.vertex_offset = d->vertex_offset,
+                                     .index_offset = d->index_offset,
+                                     .material_id = d->material_id,
+                                     .texture_id = (u32)pg_3d_to_1d_index(
+                                         0,
+                                         d->material_id,
+                                         d->art_id,
+                                         PG_TEXTURE_TYPE_COUNT,
+                                         metadata->max_material_count),
+                                     .global_transform = d->global_transform};
 
                 u32 texture_count = 0;
-                if (gp[i].material_id != material_id)
+                if (d->material_id != material_id)
                 {
                     texture_count = PG_TEXTURE_TYPE_COUNT;
-                    material_id = gp[i].material_id;
+                    material_id = d->material_id;
                 }
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_CONSTANTS,
@@ -796,9 +698,7 @@ update_app(pg_assets* assets,
             // Draw.
             cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                 .type = PG_GRAPHICS_COMMAND_TYPE_DRAW,
-                .draw
-                = {.vertex_count = model->meshes[gp[i].mesh_id].index_count,
-                   .instance_count = 1}};
+                .draw = {.vertex_count = d->index_count, .instance_count = 1}};
             gpu_command_count += 1;
         }
     }
