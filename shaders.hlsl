@@ -15,7 +15,6 @@ struct frame_data
 {
     float4x4 world_from_model;
     float4x4 clip_from_world;
-    float3 light_dir;
     float3 camera_pos;
 };
 
@@ -54,7 +53,6 @@ struct pixel
     float3 normal : NORMAL;        // world space
     float3 tangent : TANGENT;      // world space
     float3 bitangent : BITANGENT;  // world space
-    float3 light_dir : POSITION0;  // world space (towards target)
     float3 view_dir : POSITION1;   // world space (towards target)
     float2 tex_coord : TEX_COORD;  // texture space
     float4 color : COLOR0;
@@ -110,10 +108,9 @@ vs(uint index_id : SV_VertexID)
 
     p.bitangent = normalize(mul(cross(p.normal, p.tangent), v.tangent.w));
 
-    p.light_dir = per_frame.light_dir;
-
     p.view_dir
-        = (float3)mul(per_frame.world_from_model, float4(v.position, 1.0f))
+        = (float3)mul(per_frame.world_from_model,
+                      mul(per_draw.global_transform, float4(v.position, 1.0f)))
           - per_frame.camera_pos;
 
     p.tex_coord = v.tex_coord;
@@ -264,7 +261,7 @@ ps(pixel p) :
     // NOTE: `f0` is the base reflectivity when looking directly at the surface
     // (p.e. 0 degree angle between `n` and `v`).
     float3 n = normalize(normal);
-    float3 l = normalize(-p.light_dir);
+    float3 l = normalize(-p.view_dir); // NOTE: `light_dir` for manual control
     float3 v = normalize(-p.view_dir);
     float3 h = normalize(l + v);
     float n_dot_v = max(0.0f, dot(n, v));

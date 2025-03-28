@@ -20,10 +20,8 @@ typedef struct
 {
     pg_f32_4x4 world_from_model;
     pg_f32_4x4 clip_from_world;
-    pg_f32_3x light_dir;
-    f32 padding0;
     pg_f32_3x camera_pos;
-    f32 padding1;
+    f32 padding0;
 } per_frame_cb;
 
 // NOTE: This represents constant buffer data, which requires 16-byte alignment.
@@ -47,7 +45,6 @@ typedef struct
     f32 center_zoom;
     f32 running_simulation_time; // in ms
     pg_f32_3x rotation;
-    pg_f32_3x light_dir;
     pg_camera camera;        // align: 4
     pg_graphics_api gfx_api; // align: 4
 } application_state;
@@ -65,12 +62,12 @@ typedef enum
     MODEL_NONE,
     MODEL_BAKER_AND_THE_BRIDGE,
     MODEL_BOX_ANIMATED,
+    MODEL_CESIUM_MILK_TRUCK,
     MODEL_CORSET,
     MODEL_DAMAGED_HELMET,
     MODEL_FTM,
     MODEL_METAL_ROUGH_SPHERES,
     MODEL_PLAYSTATION_1,
-    MODEL_SHIP_IN_A_BOTTLE,
     MODEL_WATER_BOTTLE,
     MODEL_COUNT
 } asset_type_model;
@@ -78,12 +75,12 @@ typedef enum
 GLOBAL c8* model_names[] = {"None",
                             "Baker and the Bridge",
                             "Box Animated",
+                            "Cesium Milk Truck",
                             "Corset",
                             "Damaged Helmet",
                             "Ftm",
                             "Metal Rough Spheres",
                             "PlayStation 1",
-                            "Ship in a Bottle",
                             "Water Bottle"};
 
 GLOBAL pg_config config = {.gamepad_count = 1,
@@ -97,8 +94,7 @@ GLOBAL pg_config config = {.gamepad_count = 1,
 GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
-       .model_id = MODEL_BAKER_AND_THE_BRIDGE,
-       .light_dir = {.x = -0.5f, .y = 0.0f, .z = -1.0f},
+       .model_id = MODEL_BOX_ANIMATED,
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}},
        .gfx_api = PG_GRAPHICS_API_D3D12};
 
@@ -146,13 +142,6 @@ reset_view(void)
             app_state.camera.position.z = 12.0f;
             break;
         }
-        case MODEL_SHIP_IN_A_BOTTLE:
-        {
-            app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
-            app_state.camera.position.y = PG_PI / 2.0f;
-            app_state.camera.position.z = 10.0f;
-            break;
-        }
         case MODEL_WATER_BOTTLE:
         {
             app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
@@ -188,16 +177,6 @@ imgui_ui(void)
         {
             reset_view();
         }
-    }
-
-    b8 lighting_controls_active
-        = ImGui_CollapsingHeader("Lighting Controls",
-                                 ImGuiTreeNodeFlags_DefaultOpen);
-    if (lighting_controls_active)
-    {
-        ImGui_SliderFloat("X Direction", &app_state.light_dir.x, -1.0f, 1.0f);
-        ImGui_SliderFloat("Y Direction", &app_state.light_dir.y, -1.0f, 1.0f);
-        ImGui_SliderFloat("Z Direction", &app_state.light_dir.z, -1.0f, 1.0f);
     }
 
     b8 mouse_controls_active
@@ -403,6 +382,20 @@ update_app(pg_assets* assets,
         }
     }
 
+    // Animate.
+    pg_asset_model* model = &assets->models[app_state.model_id];
+    for (u32 i = 0; i < model->animation_count; i += 1)
+    {
+        model->animations[i].running_animation_time
+            += app_state.running_simulation_time;
+        if (model->animations[i].running_animation_time
+            > model->animations[i].total_animation_time)
+        {
+            model->animations[i].running_animation_time
+                -= model->animations[i].total_animation_time;
+        }
+    }
+
     // Simulate.
     {
         while (app_state.running_simulation_time != 0.0f)
@@ -454,13 +447,12 @@ update_app(pg_assets* assets,
     }
 
     // Generate matrices.
-    pg_asset_model* model = &assets->models[app_state.model_id];
     pg_f32_3x camera_position
         = pg_camera_get_cartesian_position(&app_state.camera);
-    pg_f32_4x4 world_from_model
-        = pg_f32_4x4_world_from_model((pg_f32_3x){0},
-                                      app_state.rotation,
-                                      (pg_f32_3x){0});
+    pg_f32_4x4 world_from_model = pg_f32_4x4_world_from_model(
+        (pg_f32_3x){0},
+        pg_f32_4x_euler_to_quaternion(app_state.rotation),
+        (pg_f32_3x){0});
     pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
         27.0f,
         render_res.width / render_res.height,
@@ -520,7 +512,6 @@ update_app(pg_assets* assets,
             }
             *per_frame = (per_frame_cb){.world_from_model = world_from_model,
                                         .clip_from_world = clip_from_world,
-                                        .light_dir = app_state.light_dir,
                                         .camera_pos = camera_position};
 
             cl->cpu_commands[cpu_command_count] = (pg_graphics_command){
