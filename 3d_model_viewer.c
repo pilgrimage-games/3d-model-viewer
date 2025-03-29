@@ -40,10 +40,12 @@ typedef struct
     b8 vsync;
     b8 auto_rotate;
     u32 model_id;
+    u32 animation_id;
     f32 fps;
     f32 frame_time;
     f32 center_zoom;
     f32 running_simulation_time; // in ms
+    f32 running_animation_time;  // in ms
     pg_f32_3x rotation;
     pg_camera camera;        // align: 4
     pg_graphics_api gfx_api; // align: 4
@@ -94,7 +96,7 @@ GLOBAL pg_config config = {.gamepad_count = 1,
 GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
-       .model_id = MODEL_BOX_ANIMATED,
+       .model_id = MODEL_CESIUM_MILK_TRUCK,
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}},
        .gfx_api = PG_GRAPHICS_API_D3D12};
 
@@ -382,17 +384,28 @@ update_app(pg_assets* assets,
         }
     }
 
-    // Animate.
     pg_asset_model* model = &assets->models[app_state.model_id];
-    for (u32 i = 0; i < model->animation_count; i += 1)
+
+    // Animate.
     {
-        model->animations[i].running_animation_time
-            += app_state.running_simulation_time;
-        if (model->animations[i].running_animation_time
-            > model->animations[i].total_animation_time)
+        if (app_state.model_id != metadata->model_id_last_frame)
         {
-            model->animations[i].running_animation_time
-                -= model->animations[i].total_animation_time;
+            app_state.running_animation_time = 0.0f;
+        }
+
+        if (app_state.animation_id < model->animation_count)
+        {
+            app_state.running_animation_time
+                += app_state.running_simulation_time;
+
+            if (app_state.running_animation_time
+                > model->animations[app_state.animation_id]
+                      .total_animation_time)
+            {
+                app_state.running_animation_time
+                    -= model->animations[app_state.animation_id]
+                           .total_animation_time;
+            }
         }
     }
 
@@ -466,10 +479,13 @@ update_app(pg_assets* assets,
         = pg_f32_4x4_mul(view_from_world, world_from_model);
 
     // Get drawables.
+    u32 model_ids[] = {app_state.model_id};
     pg_graphics_drawables drawables = {0};
     pg_asset_get_drawables(model,
-                           &app_state.model_id,
+                           model_ids,
                            1,
+                           app_state.animation_id,
+                           app_state.running_animation_time,
                            &view_from_model,
                            transient_mem,
                            &drawables,
