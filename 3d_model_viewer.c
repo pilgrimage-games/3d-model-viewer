@@ -62,9 +62,9 @@ typedef struct
 typedef enum
 {
     MODEL_NONE,
+    MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT,
     MODEL_BAKER_AND_THE_BRIDGE,
     MODEL_BOX_ANIMATED,
-    MODEL_CESIUM_MILK_TRUCK,
     MODEL_CORSET,
     MODEL_DAMAGED_HELMET,
     MODEL_FTM,
@@ -75,13 +75,13 @@ typedef enum
 } asset_type_model;
 
 GLOBAL c8* model_names[] = {"None",
+                            "Abstract Rainbow Translucent Pendant",
                             "Baker and the Bridge",
                             "Box Animated",
-                            "Cesium Milk Truck",
                             "Corset",
                             "Damaged Helmet",
                             "Ftm",
-                            "Metal Rough Spheres",
+                            "Metal-Rough Spheres",
                             "PlayStation 1",
                             "Water Bottle"};
 
@@ -96,7 +96,7 @@ GLOBAL pg_config config = {.gamepad_count = 1,
 GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
-       .model_id = MODEL_CESIUM_MILK_TRUCK,
+       .model_id = MODEL_FTM,
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}},
        .gfx_api = PG_GRAPHICS_API_D3D12};
 
@@ -109,20 +109,26 @@ reset_view(void)
         = (pg_f32_3x){.x = PG_PI / 2.0f, .y = PG_PI / 2.0f, .z = 6.0f};
     switch (app_state.model_id)
     {
+        case MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT:
+        {
+            app_state.camera.position.z = 8.0f;
+            break;
+        }
         case MODEL_BAKER_AND_THE_BRIDGE:
         {
             app_state.camera.position.y = PG_PI / 3.0f;
             app_state.camera.position.z = 100.0f;
             break;
         }
-        case MODEL_CORSET:
+        case MODEL_BOX_ANIMATED:
         {
-            app_state.camera.position.y = PG_PI / 3.0f;
-            app_state.camera.position.z = 0.3f;
+            app_state.camera.position.y = PG_PI / 4.0f;
+            app_state.camera.position.z = 12.0f;
             break;
         }
-        case MODEL_DAMAGED_HELMET:
+        case MODEL_CORSET:
         {
+            app_state.camera.position.z = 0.25f;
             break;
         }
         case MODEL_FTM:
@@ -139,7 +145,7 @@ reset_view(void)
         }
         case MODEL_PLAYSTATION_1:
         {
-            app_state.rotation.x = 90.0f;
+            app_state.rotation.x = 120.0f;
             app_state.rotation.z = 270.0f;
             app_state.camera.position.z = 12.0f;
             break;
@@ -147,7 +153,6 @@ reset_view(void)
         case MODEL_WATER_BOTTLE:
         {
             app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
-            app_state.camera.position.y = PG_PI / 2.0f;
             app_state.camera.position.z = 1.0f;
             break;
         }
@@ -479,17 +484,20 @@ update_app(pg_assets* assets,
         = pg_f32_4x4_mul(view_from_world, world_from_model);
 
     // Get drawables.
+    pg_asset_model models[] = {*model};
     u32 model_ids[] = {app_state.model_id};
+    u32 animation_ids[] = {app_state.animation_id};
+    f32 running_animation_times[] = {app_state.running_animation_time};
     pg_graphics_drawables drawables = {0};
-    pg_asset_get_drawables(model,
-                           model_ids,
-                           1,
-                           app_state.animation_id,
-                           app_state.running_animation_time,
-                           &view_from_model,
-                           transient_mem,
-                           &drawables,
-                           err);
+    pg_asset_model_get_drawables(models,
+                                 model_ids,
+                                 animation_ids,
+                                 running_animation_times,
+                                 CAP(models),
+                                 &view_from_model,
+                                 transient_mem,
+                                 &drawables,
+                                 err);
 
     // Allocate memory for command list.
     *cl = (pg_graphics_command_list){0};
@@ -640,20 +648,19 @@ update_app(pg_assets* assets,
             gpu_command_count += 1;
         }
 
-        u32 material_id = metadata->max_material_count;
         for (u32 i = 0; i < drawables.final_drawable_count; i += 1)
         {
             pg_graphics_drawable* d = &drawables.final_drawables[i];
 
             // Set pipeline state.
-            if (i == 0)
+            if (i == 0 && drawables.opaque_drawable_count > 0)
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
                     .set_pipeline_state = {.opaque = true}};
                 gpu_command_count += 1;
             }
-            else if (i == drawables.opaque_drawable_count)
+            else if (i >= drawables.opaque_drawable_count)
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
@@ -685,18 +692,12 @@ update_app(pg_assets* assets,
                                          metadata->max_material_count),
                                      .global_transform = d->global_transform};
 
-                u32 texture_count = 0;
-                if (d->material_id != material_id)
-                {
-                    texture_count = PG_TEXTURE_TYPE_COUNT;
-                    material_id = d->material_id;
-                }
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_CONSTANTS,
                     .set_constants
                     = {.texture_id_idx
                        = offsetof(constants_cb, texture_id) / sizeof(u32),
-                       .texture_count = texture_count,
+                       .texture_count = PG_TEXTURE_TYPE_COUNT,
                        .constant_count = sizeof(constants_cb) / sizeof(u32),
                        .constants = (u32*)constants}};
                 gpu_command_count += 1;
@@ -751,7 +752,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     pg_assets* assets = pg_assets_read_pga(&windows.permanent_mem,
                                            &pg_windows_read_file,
                                            &err);
-    pg_assets_verify(assets, 0, 0, 0, MODEL_COUNT, 0, &err);
+    pg_assets_verify(assets, 0, 0, MODEL_COUNT, 0, &err);
     static_assert(CAP(model_names) == MODEL_COUNT);
 
     init_app(assets,

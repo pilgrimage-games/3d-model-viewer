@@ -11,13 +11,6 @@
     ConstantBuffer<type> name : register(reg)
 #endif
 
-struct frame_data
-{
-    float4x4 world_from_model;
-    float4x4 clip_from_world;
-    float3 camera_pos;
-};
-
 struct constants
 {
     uint vertex_offset;
@@ -25,6 +18,13 @@ struct constants
     uint material_id;
     uint texture_id;
     float4x4 global_transform;
+};
+
+struct frame_data
+{
+    float4x4 world_from_model;
+    float4x4 clip_from_world;
+    float3 camera_pos;
 };
 
 struct vertex
@@ -58,6 +58,12 @@ struct pixel
     float4 color : COLOR0;
 };
 
+// Shared Resources
+#if defined(VULKAN)
+[[vk::push_constant]]
+#endif
+CONSTANT_BUFFER(constants, per_draw, b0);
+
 // Vertex Shader Resources
 CONSTANT_BUFFER(frame_data, per_frame, b1);
 StructuredBuffer<vertex> vertices : register(t2);
@@ -71,12 +77,6 @@ Texture2D textures[] : TEXTURE : register(t5, space1);
 Texture2D textures[4] : TEXTURE : register(t5);
 #endif
 SamplerState ss : SAMPLER : register(s0);
-
-// Shared Resources
-#if defined(VULKAN)
-[[vk::push_constant]]
-#endif
-CONSTANT_BUFFER(constants, per_draw, b0);
 
 pixel
 vs(uint index_id : SV_VertexID)
@@ -124,7 +124,7 @@ vs(uint index_id : SV_VertexID)
 float3
 fresnel_schlick(float v_dot_h, float3 f0)
 {
-    return f0 + ((1.0f - f0) * pow(1.0f - v_dot_h, 5.0f));
+    return f0 + ((1.0f - f0) * pow(1.0f - min(v_dot_h, 1.0f), 5.0f));
 }
 
 // Normal Distribution Function using GGX
