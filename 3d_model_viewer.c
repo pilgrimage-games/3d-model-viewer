@@ -420,7 +420,9 @@ update_app(pg_assets* assets,
 #endif
 
         if (mouse_active
-            && pg_button_active(&input->mouse.left, app_state.frame_time))
+            && pg_button_active(&input->mouse.left, app_state.frame_time)
+            && (!pg_f32_2x_eq(previous_cursor_position, (pg_f32_2x){0})))
+
         {
             cursor_delta = pg_f32_2x_mul(
                 pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
