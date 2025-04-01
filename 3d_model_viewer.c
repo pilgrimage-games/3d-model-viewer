@@ -379,7 +379,7 @@ update_app(pg_assets* assets,
         {
             cursor_delta = pg_f32_2x_mul(
                 pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
-                (pg_f32_2x){.x = 100.0f, .y = 100.0f});
+                pg_f32_2x_pack(100.0f));
         }
 
         if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
