@@ -210,8 +210,9 @@ get_normal(pixel p, uint tex_offset, material_properties mp)
     if (mp.has_texture & (1 << 2))
     {
         // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed
-        // from tangent space to world space. NOTE: glTF normal maps are
-        // +Y/Green-up. green on bottom = hole, green on top = bump
+        // from tangent space to world space.
+        // NOTE: glTF normal maps are +Y/Green-up. green on bottom = hole,
+        // green on top = bump
         float3 normal = textures[tex_offset + 2].Sample(ss, p.tex_coord).rgb;
         normal = (normal * 2.0f) - 1.0f;
         float3x3 tbn = transpose(float3x3(p.tangent, p.bitangent, p.normal));

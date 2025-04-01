@@ -46,7 +46,9 @@ typedef struct
     f32 center_zoom;
     f32 running_simulation_time; // in ms
     f32 running_animation_time;  // in ms
+    pg_f32_3x scaling;
     pg_f32_3x rotation;
+    pg_f32_3x translation;
     pg_camera camera;        // align: 4
     pg_graphics_api gfx_api; // align: 4
 } application_state;
@@ -88,8 +90,8 @@ GLOBAL c8* model_names[] = {"None",
 GLOBAL pg_config config = {.gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
                            .simulation_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
-                           .permanent_mem_size = 2u * PG_GIBIBYTE,
-                           .transient_mem_size = 64u * PG_MEBIBYTE,
+                           .permanent_mem_size = 2048u * PG_MEBIBYTE,
+                           .transient_mem_size = 128u * PG_KIBIBYTE,
                            .gfx_cpu_mem_size = 512u * PG_MEBIBYTE,
                            .gfx_gpu_mem_size = 512u * PG_MEBIBYTE};
 
@@ -104,38 +106,41 @@ FUNCTION void
 reset_view(void)
 {
     app_state.auto_rotate = true;
-    app_state.rotation = (pg_f32_3x){.x = 0.0f, .y = 0.0f, .z = 0.0f};
+    app_state.scaling = (pg_f32_3x){0};
+    app_state.rotation = (pg_f32_3x){0};
+    app_state.translation = (pg_f32_3x){0};
     app_state.camera.position
         = (pg_f32_3x){.x = PG_PI / 2.0f, .y = PG_PI / 2.0f, .z = 6.0f};
     switch (app_state.model_id)
     {
         case MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT:
         {
-            app_state.camera.position.z = 8.0f;
+            app_state.scaling = pg_f32_3x_pack(0.8f);
             break;
         }
         case MODEL_BAKER_AND_THE_BRIDGE:
         {
+            app_state.scaling = pg_f32_3x_pack(0.06f);
             app_state.camera.position.y = PG_PI / 3.0f;
-            app_state.camera.position.z = 100.0f;
             break;
         }
         case MODEL_BOX_ANIMATED:
         {
+            app_state.scaling = pg_f32_3x_pack(0.5f);
             app_state.camera.position.y = PG_PI / 4.0f;
-            app_state.camera.position.z = 12.0f;
             break;
         }
         case MODEL_CORSET:
         {
-            app_state.camera.position.z = 0.25f;
+            app_state.scaling = pg_f32_3x_pack(30.0f);
+            app_state.translation.y = -0.8f;
             break;
         }
         case MODEL_FTM:
         {
+            app_state.scaling = pg_f32_3x_pack(0.13f);
             app_state.rotation.y = 135.0f;
             app_state.camera.position.y = PG_PI / 2.5f;
-            app_state.camera.position.z = 45.0f;
             break;
         }
         case MODEL_METAL_ROUGH_SPHERES:
@@ -145,15 +150,15 @@ reset_view(void)
         }
         case MODEL_PLAYSTATION_1:
         {
+            app_state.scaling = pg_f32_3x_pack(0.5f);
             app_state.rotation.x = 120.0f;
             app_state.rotation.z = 270.0f;
-            app_state.camera.position.z = 12.0f;
             break;
         }
         case MODEL_WATER_BOTTLE:
         {
+            app_state.scaling = pg_f32_3x_pack(8.0f);
             app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
-            app_state.camera.position.z = 1.0f;
             break;
         }
     }
@@ -468,14 +473,14 @@ update_app(pg_assets* assets,
     pg_f32_3x camera_position
         = pg_camera_get_cartesian_position(&app_state.camera);
     pg_f32_4x4 world_from_model = pg_f32_4x4_world_from_model(
-        (pg_f32_3x){0},
+        app_state.scaling,
         pg_f32_4x_euler_to_quaternion(app_state.rotation),
-        (pg_f32_3x){0});
+        app_state.translation);
     pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
         27.0f,
         render_res.width / render_res.height,
         0.1f,
-        500.0f);
+        100.0f);
     pg_f32_4x4 view_from_world
         = pg_f32_4x4_view_from_world(camera_position,
                                      app_state.camera.focal_point,
@@ -660,7 +665,7 @@ update_app(pg_assets* assets,
                     .set_pipeline_state = {.opaque = true}};
                 gpu_command_count += 1;
             }
-            else if (i >= drawables.opaque_drawable_count)
+            else if (i == drawables.opaque_drawable_count)
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
