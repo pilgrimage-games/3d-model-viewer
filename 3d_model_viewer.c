@@ -382,9 +382,8 @@ update_app(pg_assets* assets,
             && (!pg_f32_2x_eq(previous_cursor_position, (pg_f32_2x){0})))
 
         {
-            cursor_delta = pg_f32_2x_mul(
-                pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position),
-                pg_f32_2x_pack(100.0f));
+            cursor_delta
+                = pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position);
         }
 
         if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
@@ -421,6 +420,7 @@ update_app(pg_assets* assets,
 
     // Simulate.
     {
+        f32 cursor_multiplier = 175.0f;
         while (app_state.running_simulation_time != 0.0f)
         {
             f32 dt = config.simulation_time_step;
@@ -440,9 +440,11 @@ update_app(pg_assets* assets,
             else
             {
                 app_state.camera.position.x += pg_f32_deg_to_rad(
-                    manual_rotation_rate * cursor_delta.x * dt);
+                    manual_rotation_rate * (cursor_delta.x * cursor_multiplier)
+                    * dt);
                 app_state.camera.position.y += pg_f32_deg_to_rad(
-                    manual_rotation_rate * cursor_delta.y * dt);
+                    manual_rotation_rate * (cursor_delta.y * cursor_multiplier)
+                    * dt);
                 app_state.camera.position.x += pg_f32_deg_to_rad(
                     manual_rotation_rate * input->gp[0].rs.x * dt);
                 app_state.camera.position.y += pg_f32_deg_to_rad(
@@ -464,7 +466,7 @@ update_app(pg_assets* assets,
         pg_camera_clamp(
             (pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
             (pg_f32_2x){.min = 0.0f, .max = PG_PI},
-            (pg_f32_2x){.min = 0.0f, .max = app_state.center_zoom * 2.0f},
+            (pg_f32_2x){.min = 1.0f, .max = app_state.center_zoom * 1.5f},
             true,
             &app_state.camera);
     }
