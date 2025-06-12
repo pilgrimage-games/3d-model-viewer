@@ -1,8 +1,5 @@
 #define PG_APP_NAME "3D Model Viewer"
-#define PG_APP_D3D11
-#define PG_APP_D3D12
-#define PG_APP_OPENGL
-#define PG_APP_VULKAN
+#define PG_APP_GPU_RENDERING
 #define PG_APP_IMGUI
 
 #define CAMERA_AUTO_ROTATION_RATE 30.0f    // degrees/sec
@@ -49,8 +46,9 @@ typedef struct
     pg_f32_3x scaling;
     pg_f32_3x rotation;
     pg_f32_3x translation;
-    pg_camera camera;        // align: 4
-    pg_graphics_api gfx_api; // align: 4
+    pg_camera camera;                   // align: 4
+    pg_graphics_api gfx_api;            // align: 4
+    pg_graphics_api supported_gfx_apis; // align: 4
 } application_state;
 
 typedef struct
@@ -99,8 +97,7 @@ GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
        .model_id = MODEL_FTM,
-       .camera = {.arcball = true, .up_axis = {.y = 1.0f}},
-       .gfx_api = PG_GRAPHICS_API_D3D12};
+       .camera = {.arcball = true, .up_axis = {.y = 1.0f}}};
 
 FUNCTION void
 reset_view(void)
@@ -170,6 +167,7 @@ imgui_ui(void)
 {
 #if defined(PG_APP_IMGUI)
     pg_imgui_graphics_header(&app_state.gfx_api,
+                             app_state.supported_gfx_apis,
                              app_state.fps,
                              app_state.frame_time);
 
@@ -769,11 +767,12 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
              &err);
 
     pg_windows_init_graphics(&windows,
-                             app_state.gfx_api,
                              config.gfx_cpu_mem_size,
                              config.gfx_gpu_mem_size,
                              init_command_list,
                              app_state.vsync,
+                             &app_state.gfx_api,
+                             &app_state.supported_gfx_apis,
                              &err);
     pg_windows_init_metrics(&windows.metrics, &err);
 
@@ -818,13 +817,14 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
             metadata.model_id_last_frame = 0;
             pg_windows_reload_graphics(&windows,
                                        inst,
-                                       app_state.gfx_api,
                                        config.gfx_cpu_mem_size,
                                        config.gfx_gpu_mem_size,
                                        init_command_list,
                                        config.fixed_aspect_ratio_width,
                                        config.fixed_aspect_ratio_height,
                                        app_state.vsync,
+                                       &app_state.gfx_api,
+                                       &app_state.supported_gfx_apis,
                                        &err);
         }
 

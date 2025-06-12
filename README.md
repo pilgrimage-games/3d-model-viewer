@@ -24,17 +24,13 @@ metallic-roughness, normal, and emissive textures
 * Non-opaque material support (i.e. translucency sorting)
 * Animation support
 * Custom renderers for all modern PC graphics APIs (Direct3D 11, Direct3D 12,
-OpenGL, and Vulkan)
+and Vulkan)
 * Bindless rendering and root constants (Direct3D 12/Vulkan)
 * Support for arbitrary display resolutions, refresh rates, and aspect ratios
 * Support for Steam Deck and other Linux-based devices via Proton
 * Arcball camera (camera is rotated on a sphere around the model)
 * Mouse/keyboard and gamepad controls for model selection, rotation, zoom, etc.
 * Immediate-mode GUI for displaying performance metrics, controls, etc.
-
-NOTE: The OpenGL renderer has a known bug that displays a black screen on some
-graphics hardware and driver configurations. The issue will be addressed in a
-future release.
 
 ## Models
 The included 3D models are processed from their original glTF 2.0 binary format
