@@ -36,6 +36,7 @@ typedef struct
 {
     b8 vsync;
     b8 auto_rotate;
+    b8 wireframe_mode;
     u32 model_id;
     u32 animation_id;
     f32 fps;
@@ -172,10 +173,10 @@ imgui_ui(void)
                              app_state.frame_time);
 
     b8 model_selection_active
-        = ImGui_CollapsingHeader("Model Selection",
-                                 ImGuiTreeNodeFlags_DefaultOpen);
+        = ImGui_CollapsingHeader("Models", ImGuiTreeNodeFlags_DefaultOpen);
     if (model_selection_active)
     {
+        ImGui_SeparatorText("Model Selection");
         u32 model_id = app_state.model_id;
         for (asset_type_model i = 1; i < MODEL_COUNT; i += 1)
         {
@@ -187,6 +188,9 @@ imgui_ui(void)
         {
             reset_view();
         }
+
+        ImGui_SeparatorText("Display Options");
+        ImGui_Checkbox("Wireframe Mode", (bool*)&app_state.wireframe_mode);
     }
 
     b8 mouse_controls_active
@@ -662,14 +666,16 @@ update_app(pg_assets* assets,
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
-                    .set_pipeline_state = {.opaque = true}};
+                    .set_pipeline_state
+                    = {.opaque = true, .wireframe = app_state.wireframe_mode}};
                 gpu_command_count += 1;
             }
             else if (i == drawables.opaque_drawable_count)
             {
                 cl->gpu_commands[gpu_command_count] = (pg_graphics_command){
                     .type = PG_GRAPHICS_COMMAND_TYPE_SET_PIPELINE_STATE,
-                    .set_pipeline_state = {.opaque = false}};
+                    .set_pipeline_state
+                    = {.opaque = false, .wireframe = app_state.wireframe_mode}};
                 gpu_command_count += 1;
             }
 
