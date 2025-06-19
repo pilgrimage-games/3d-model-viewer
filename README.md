@@ -31,6 +31,7 @@ and Vulkan)
 * Arcball camera (camera is rotated on a sphere around the model)
 * Mouse/keyboard and gamepad controls for model selection, rotation, zoom, etc.
 * Immediate-mode GUI for displaying performance metrics, controls, etc.
+* Wireframe mode
 
 ## Models
 The included 3D models are processed from their original glTF 2.0 binary format
