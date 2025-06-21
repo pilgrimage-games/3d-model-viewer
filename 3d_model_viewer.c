@@ -422,7 +422,7 @@ update_app(pg_assets* assets,
 
     // Simulate.
     {
-        f32 cursor_multiplier = 175.0f;
+        f32 cursor_multiplier = 150.0f;
         while (app_state.running_simulation_time != 0.0f)
         {
             f32 dt = config.simulation_time_step;
