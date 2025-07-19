@@ -34,22 +34,23 @@ typedef struct
 
 typedef struct
 {
+    b8 fullscreen;
     b8 vsync;
-    b8 auto_rotate;
     b8 wireframe_mode;
+    b8 auto_rotate;
     u32 model_id;
     u32 animation_id;
-    f32 fps;
-    f32 frame_time;
     f32 center_zoom;
     f32 running_simulation_time; // in ms
     f32 running_animation_time;  // in ms
+    pg_f32_2x previous_cursor_position;
     pg_f32_3x scaling;
     pg_f32_3x rotation;
     pg_f32_3x translation;
     pg_camera camera;                   // align: 4
     pg_graphics_api gfx_api;            // align: 4
     pg_graphics_api supported_gfx_apis; // align: 4
+    pg_graphics_metrics* metrics;
 } application_state;
 
 typedef struct
@@ -169,8 +170,10 @@ imgui_ui(void)
 #if defined(PG_APP_IMGUI)
     pg_imgui_graphics_header(&app_state.gfx_api,
                              app_state.supported_gfx_apis,
-                             app_state.fps,
-                             app_state.frame_time);
+                             &app_state.fullscreen,
+                             &app_state.vsync,
+                             &app_state.wireframe_mode,
+                             app_state.metrics);
 
     b8 model_selection_active
         = ImGui_CollapsingHeader("Models", ImGuiTreeNodeFlags_DefaultOpen);
@@ -188,9 +191,6 @@ imgui_ui(void)
         {
             reset_view();
         }
-
-        ImGui_SeparatorText("Display Options");
-        ImGui_Checkbox("Wireframe Mode", (bool*)&app_state.wireframe_mode);
     }
 
     b8 mouse_controls_active
@@ -326,7 +326,6 @@ FUNCTION void
 update_app(pg_assets* assets,
            pg_input* input,
            models_metadata* metadata,
-           pg_f32_2x previous_cursor_position,
            pg_f32_2x render_res,
            pg_scratch_allocator* transient_mem,
            pg_graphics_command_list* cl,
@@ -380,12 +379,14 @@ update_app(pg_assets* assets,
 #endif
 
         if (mouse_active
-            && pg_button_active(&input->mouse.left, app_state.frame_time)
-            && (!pg_f32_2x_eq(previous_cursor_position, (pg_f32_2x){0})))
+            && pg_button_active(&input->mouse.left,
+                                app_state.metrics->cpu_last_frame_time)
+            && (!pg_f32_2x_eq(app_state.previous_cursor_position,
+                              (pg_f32_2x){0})))
 
         {
-            cursor_delta
-                = pg_f32_2x_sub(input->mouse.cursor, previous_cursor_position);
+            cursor_delta = pg_f32_2x_sub(input->mouse.cursor,
+                                         app_state.previous_cursor_position);
         }
 
         if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
@@ -755,6 +756,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                            inst,
                            config.fixed_aspect_ratio_width,
                            config.fixed_aspect_ratio_height,
+                           &app_state.fullscreen,
                            &err);
     pg_windows_init_mem(&windows,
                         config.permanent_mem_size,
@@ -781,6 +783,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                              &app_state.supported_gfx_apis,
                              &err);
     pg_windows_init_metrics(&windows.metrics, &err);
+    app_state.metrics = &windows.metrics.gfx_metrics;
 
     while (windows.msg.message != WM_QUIT)
     {
@@ -792,14 +795,16 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         }
 
         pg_graphics_api gfx_api = app_state.gfx_api;
-        pg_f32_2x previous_cursor_position = windows.input.mouse.cursor;
 
-        pg_windows_update_input(&windows, config.gamepad_count, &err);
+        app_state.previous_cursor_position = windows.input.mouse.cursor;
+        pg_windows_update_input(&windows,
+                                config.gamepad_count,
+                                &app_state.fullscreen,
+                                &err);
 
         update_app(assets,
                    &windows.input,
                    &metadata,
-                   previous_cursor_position,
                    windows.window.render_res,
                    &windows.transient_mem,
                    &update_command_list,
@@ -809,14 +814,14 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
         pg_windows_update_graphics(&windows,
                                    app_state.gfx_api,
                                    update_command_list,
+                                   app_state.fullscreen,
                                    app_state.vsync,
                                    &imgui_ui,
                                    &err);
 
         pg_windows_update_metrics(&windows.metrics, &err);
-        app_state.fps = windows.metrics.fps;
-        app_state.frame_time = windows.metrics.frame_time;
-        app_state.running_simulation_time += app_state.frame_time;
+        app_state.running_simulation_time
+            += app_state.metrics->cpu_last_frame_time;
 
         if (app_state.gfx_api != gfx_api)
         {
@@ -828,6 +833,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                        init_command_list,
                                        config.fixed_aspect_ratio_width,
                                        config.fixed_aspect_ratio_height,
+                                       &app_state.fullscreen,
                                        app_state.vsync,
                                        &app_state.gfx_api,
                                        &app_state.supported_gfx_apis,
