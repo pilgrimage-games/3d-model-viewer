@@ -68,7 +68,7 @@ typedef struct
     u32 max_vertex_count;
     u32 max_index_count;
     u32 max_material_count;
-    u32* model_ids_by_priority;
+    u32 total_texture_count;
 } models_metadata;
 
 typedef enum
@@ -262,14 +262,11 @@ init_app(pg_assets* assets,
         {
             metadata->max_material_count = model->material_count;
         }
-    }
-    ok &= pg_scratch_alloc(permanent_mem,
-                           assets->model_count * sizeof(u32),
-                           alignof(u32),
-                           &metadata->model_ids_by_priority);
-    if (!ok)
-    {
-        PG_ERROR_MAJOR("failed to get memory for model ids by priority");
+
+        for (u32 j = 0; j < model->material_count; j += 1)
+        {
+            metadata->total_texture_count += model->materials[j].texture_count;
+        }
     }
 
     // Initialize renderer data.
@@ -601,52 +598,8 @@ update_app(pg_assets* assets,
 
         // Declare (required and optional) textures for upcoming frame.
         {
-            // Generate a new list of model ids in priority order (i.e. +/-1,
-            // +/-2, etc), where the 0th index is the current (required) model.
-            if (app_state.model_id != metadata->model_id_last_frame)
-            {
-                metadata->model_ids_by_priority[0] = app_state.model_id;
-                s32 offset = 1;
-                b8 positive = true;
-                for (u32 i = 1; i < assets->model_count; i += 1)
-                {
-                    if (positive)
-                    {
-                        metadata->model_ids_by_priority[i]
-                            = (app_state.model_id + offset)
-                              % assets->model_count;
-                    }
-                    else
-                    {
-                        u32 model_id = (app_state.model_id - offset)
-                                       % assets->model_count;
-                        if (model_id < 0)
-                        {
-                            model_id += assets->model_count;
-                        }
-                        metadata->model_ids_by_priority[i] = model_id;
-                    }
-
-                    positive = !positive;
-                    if (positive)
-                    {
-                        offset += 1;
-                    }
-                }
-            }
-
-            u32 total_texture_count = 0;
-            for (u32 i = 0; i < assets->model_count; i += 1)
-            {
-                pg_asset_model* model
-                    = &assets->models[metadata->model_ids_by_priority[i]];
-                for (u32 j = 0; j < model->material_count; j += 1)
-                {
-                    total_texture_count += model->materials[j].texture_count;
-                }
-            }
             ok &= pg_scratch_alloc(transient_mem,
-                                   total_texture_count
+                                   metadata->total_texture_count
                                        * sizeof(pg_graphics_texture_data),
                                    alignof(pg_graphics_texture_data),
                                    &renderer_data->texture_data);
@@ -655,36 +608,75 @@ update_app(pg_assets* assets,
                 PG_ERROR_MAJOR("failed to get memory for texture data");
             }
 
+            // Consider textures for the current model required and textures
+            // for all other models in priority order (i.e. +/-1, +/-2, etc)
+            // optional.
             u32 required_texture_count = 0;
             u32 optional_texture_count = 0;
-            for (u32 i = 0; i < assets->model_count; i += 1)
+            if (app_state.model_id != metadata->model_id_last_frame)
             {
-                pg_asset_model* model
-                    = &assets->models[metadata->model_ids_by_priority[i]];
-                for (u32 j = 0; j < model->material_count; j += 1)
+                s32 offset = 0;
+                b8 positive = true;
+                for (u32 i = 0; i < assets->model_count; i += 1)
                 {
-                    for (u32 k = 0; k < model->materials[j].texture_count;
-                         k += 1)
+                    s32 model_id = 0;
+                    if (i == 0)
                     {
-                        renderer_data->texture_data[required_texture_count
-                                                    + optional_texture_count]
-                            = (pg_graphics_texture_data){
-                                .id = (u32)pg_3d_to_1d_index(
-                                    model->materials[j].textures[k].type,
-                                    j,
-                                    metadata->model_ids_by_priority[i],
-                                    PG_TEXTURE_TYPE_COUNT,
-                                    metadata->max_material_count),
-                                .texture = &(model->materials[j].textures[k])};
+                        model_id = (s32)app_state.model_id;
+                    }
+                    else if (positive)
+                    {
+                        model_id = ((s32)app_state.model_id + offset)
+                                   % (s32)assets->model_count;
+                    }
+                    else
+                    {
+                        model_id = ((s32)app_state.model_id - offset)
+                                   % (s32)assets->model_count;
+                        if (model_id < 0)
+                        {
+                            model_id += assets->model_count;
+                        }
+                    }
 
-                        if (i == 0)
+                    pg_asset_model* model = &assets->models[model_id];
+                    for (u32 j = 0; j < model->material_count; j += 1)
+                    {
+                        for (u32 k = 0; k < model->materials[j].texture_count;
+                             k += 1)
                         {
-                            required_texture_count += 1;
+                            renderer_data
+                                ->texture_data[required_texture_count
+                                               + optional_texture_count]
+                                = (pg_graphics_texture_data){
+                                    .id = (u32)pg_3d_to_1d_index(
+                                        model->materials[j].textures[k].type,
+                                        j,
+                                        model_id,
+                                        PG_TEXTURE_TYPE_COUNT,
+                                        metadata->max_material_count),
+                                    .texture
+                                    = &(model->materials[j].textures[k])};
+
+                            if (i == 0)
+                            {
+                                required_texture_count += 1;
+                            }
+                            else
+                            {
+                                optional_texture_count += 1;
+                            }
                         }
-                        else
-                        {
-                            optional_texture_count += 1;
-                        }
+                    }
+
+                    if (i != 0)
+                    {
+                        positive = !positive;
+                    }
+
+                    if (positive)
+                    {
+                        offset += 1;
                     }
                 }
             }
