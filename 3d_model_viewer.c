@@ -3,7 +3,7 @@
 #define PG_APP_IMGUI
 
 #define CAMERA_AUTO_ROTATION_RATE 30.0f    // degrees/sec
-#define CAMERA_MANUAL_ROTATION_RATE 180.0f // degrees/sec
+#define CAMERA_MANUAL_ROTATION_RATE 135.0f // degrees/sec
 
 #if defined(WINDOWS)
 #include <windows/pg_windows.h>
@@ -49,9 +49,7 @@ typedef struct
     b8 auto_rotate;
     u32 model_id;
     u32 animation_id;
-    f32 center_zoom;
-    f32 running_simulation_time; // in ms
-    f32 running_animation_time;  // in ms
+    f32 running_animation_time; // in ms
     pg_f32_2x previous_cursor_position;
     pg_f32_3x scaling;
     pg_f32_3x rotation;
@@ -99,7 +97,6 @@ GLOBAL c8* model_names[] = {"None",
 
 GLOBAL pg_config config = {.gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
-                           .simulation_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
                            .permanent_mem_size = 1024u * PG_MEBIBYTE,
                            .transient_mem_size = 128u * PG_KIBIBYTE,
                            .min_gpu_mem_size = 512u * PG_MEBIBYTE};
@@ -134,14 +131,19 @@ reset_view(void)
         }
         case MODEL_BOX_ANIMATED:
         {
-            app_state.scaling = pg_f32_3x_pack(0.5f);
+            app_state.scaling = pg_f32_3x_pack(0.45f);
             app_state.camera.position.y = PG_PI / 4.0f;
             break;
         }
         case MODEL_CORSET:
         {
-            app_state.scaling = pg_f32_3x_pack(30.0f);
-            app_state.translation.y = -0.8f;
+            app_state.scaling = pg_f32_3x_pack(35.0f);
+            app_state.translation.y = -1.0f;
+            break;
+        }
+        case MODEL_DAMAGED_HELMET:
+        {
+            app_state.scaling = pg_f32_3x_pack(1.125f);
             break;
         }
         case MODEL_FTM:
@@ -153,7 +155,7 @@ reset_view(void)
         }
         case MODEL_METAL_ROUGH_SPHERES:
         {
-            app_state.camera.position.z = 30.0f;
+            app_state.scaling = pg_f32_3x_pack(0.2f);
             break;
         }
         case MODEL_PLAYSTATION_1:
@@ -166,11 +168,10 @@ reset_view(void)
         case MODEL_WATER_BOTTLE:
         {
             app_state.scaling = pg_f32_3x_pack(8.0f);
-            app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
+            app_state.rotation.y = 225.0f;
             break;
         }
     }
-    app_state.center_zoom = app_state.camera.position.z;
 }
 
 FUNCTION void
@@ -230,6 +231,7 @@ imgui_ui(void)
         ImGui_Text("[D-Pad Right/Down]: Next Model");
         ImGui_Text("[Right Thumbstick]: Rotate");
         ImGui_Text("[Right Trigger/Left Trigger]: Zoom In/Zoom Out");
+        ImGui_Text("[View]: Toggle Fullscreen");
     }
 #endif
 }
@@ -334,6 +336,8 @@ update_app(pg_assets* assets,
 {
     b8 ok = true;
 
+    f32 frame_time = app_state.metrics->cpu_last_frame_time;
+
     // Process input.
     pg_f32_2x cursor_delta = {0};
     {
@@ -371,6 +375,12 @@ update_app(pg_assets* assets,
             reset_view();
         }
 
+        // Gamepad: Toggle Fullscreen
+        if (pg_button_active(&input->gp[0].view, config.input_repeat_rate))
+        {
+            app_state.fullscreen = !app_state.fullscreen;
+        }
+
         b8 mouse_active = true;
 #if defined(PG_APP_IMGUI)
         if (ImGui_GetIO()->WantCaptureMouse)
@@ -379,15 +389,16 @@ update_app(pg_assets* assets,
         }
 #endif
 
-        if (mouse_active
-            && pg_button_active(&input->mouse.left,
-                                app_state.metrics->cpu_last_frame_time)
+        if (mouse_active && pg_button_active(&input->mouse.left, frame_time)
             && (!pg_f32_2x_eq(app_state.previous_cursor_position,
                               (pg_f32_2x){0})))
 
         {
-            cursor_delta = pg_f32_2x_sub(input->mouse.cursor,
-                                         app_state.previous_cursor_position);
+            f32 cursor_multiplier = 100.0f;
+            cursor_delta = pg_f32_2x_mul(
+                pg_f32_2x_sub(input->mouse.cursor,
+                              app_state.previous_cursor_position),
+                pg_f32_2x_pack(cursor_multiplier));
         }
 
         if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
@@ -408,9 +419,9 @@ update_app(pg_assets* assets,
 
         if (app_state.animation_id < curr_model->animation_count)
         {
-            app_state.running_animation_time
-                += app_state.running_simulation_time;
+            app_state.running_animation_time += frame_time;
 
+            // Loop the animation.
             if (app_state.running_animation_time
                 > curr_model->animations[app_state.animation_id]
                       .total_animation_time)
@@ -424,55 +435,40 @@ update_app(pg_assets* assets,
 
     // Simulate.
     {
-        f32 cursor_multiplier = 150.0f;
-        while (app_state.running_simulation_time != 0.0f)
+        // Rotate camera.
+        f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
+        f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
+        if (app_state.auto_rotate)
         {
-            f32 dt = config.simulation_time_step;
-            if (app_state.running_simulation_time < config.simulation_time_step)
-            {
-                dt = app_state.running_simulation_time;
-            }
-
-            // Rotate camera.
-            f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
-            f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
-            if (app_state.auto_rotate)
-            {
-                app_state.camera.position.x
-                    += pg_f32_deg_to_rad(auto_rotation_rate * dt);
-            }
-            else
-            {
-                app_state.camera.position.x += pg_f32_deg_to_rad(
-                    manual_rotation_rate * (cursor_delta.x * cursor_multiplier)
-                    * dt);
-                app_state.camera.position.y += pg_f32_deg_to_rad(
-                    manual_rotation_rate * (cursor_delta.y * cursor_multiplier)
-                    * dt);
-                app_state.camera.position.x += pg_f32_deg_to_rad(
-                    manual_rotation_rate * input->gp[0].rs.x * dt);
-                app_state.camera.position.y += pg_f32_deg_to_rad(
-                    manual_rotation_rate * input->gp[0].rs.y * dt);
-            }
-
-            // Zoom camera.
-            f32 zoom_rate = app_state.center_zoom / 1000.0f;
-            app_state.camera.position.z
-                -= zoom_rate * (u8)input->mouse.forward.pressed * dt;
-            app_state.camera.position.z
-                += zoom_rate * (u8)input->mouse.back.pressed * dt;
-            app_state.camera.position.z -= zoom_rate * input->gp[0].rt * dt;
-            app_state.camera.position.z += zoom_rate * input->gp[0].lt * dt;
-
-            app_state.running_simulation_time -= dt;
+            app_state.camera.position.x
+                += pg_f32_deg_to_rad(auto_rotation_rate * frame_time);
+        }
+        else
+        {
+            app_state.camera.position.x += pg_f32_deg_to_rad(
+                manual_rotation_rate * cursor_delta.x * frame_time);
+            app_state.camera.position.y += pg_f32_deg_to_rad(
+                manual_rotation_rate * cursor_delta.y * frame_time);
+            app_state.camera.position.x += pg_f32_deg_to_rad(
+                manual_rotation_rate * input->gp[0].rs.x * frame_time);
+            app_state.camera.position.y += pg_f32_deg_to_rad(
+                manual_rotation_rate * input->gp[0].rs.y * frame_time);
         }
 
-        pg_camera_clamp(
-            (pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
-            (pg_f32_2x){.min = 0.0f, .max = PG_PI},
-            (pg_f32_2x){.min = 1.0f, .max = app_state.center_zoom * 1.5f},
-            true,
-            &app_state.camera);
+        // Zoom camera.
+        f32 zoom_rate = 1.0f / 150.0f;
+        app_state.camera.position.z
+            -= zoom_rate * (u8)input->mouse.forward.pressed * frame_time;
+        app_state.camera.position.z
+            += zoom_rate * (u8)input->mouse.back.pressed * frame_time;
+        app_state.camera.position.z -= zoom_rate * input->gp[0].rt * frame_time;
+        app_state.camera.position.z += zoom_rate * input->gp[0].lt * frame_time;
+
+        pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
+                        (pg_f32_2x){.min = 0.0f, .max = PG_PI},
+                        (pg_f32_2x){.min = 2.0f, .max = 10.0f},
+                        true,
+                        &app_state.camera);
     }
 
     // Generate matrices.
@@ -485,8 +481,8 @@ update_app(pg_assets* assets,
     pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
         27.0f,
         render_res.width / render_res.height,
-        0.1f,
-        100.0f);
+        0.01f,
+        16.0f);
     pg_f32_4x4 view_from_world
         = pg_f32_4x4_view_from_world(camera_position,
                                      app_state.camera.focal_point,
@@ -819,8 +815,6 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                    &err);
 
         pg_windows_update_metrics(&windows.metrics, &err);
-        app_state.running_simulation_time
-            += app_state.metrics->cpu_last_frame_time;
 
         if (app_state.gfx_api != gfx_api)
         {
