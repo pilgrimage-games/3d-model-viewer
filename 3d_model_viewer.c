@@ -3,7 +3,7 @@
 #define PG_APP_IMGUI
 
 #define CAMERA_AUTO_ROTATION_RATE 30.0f    // degrees/sec
-#define CAMERA_MANUAL_ROTATION_RATE 180.0f // degrees/sec
+#define CAMERA_MANUAL_ROTATION_RATE 135.0f // degrees/sec
 
 #if defined(WINDOWS)
 #include <windows/pg_windows.h>
@@ -66,7 +66,6 @@ typedef struct
     u32 max_vertex_count;
     u32 max_index_count;
     u32 max_material_count;
-    u32 max_animation_count;
     u32 total_texture_count;
 } models_metadata;
 
@@ -232,6 +231,7 @@ imgui_ui(void)
         ImGui_Text("[D-Pad Right/Down]: Next Model");
         ImGui_Text("[Right Thumbstick]: Rotate");
         ImGui_Text("[Right Trigger/Left Trigger]: Zoom In/Zoom Out");
+        ImGui_Text("[View]: Toggle Fullscreen");
     }
 #endif
 }
@@ -373,6 +373,12 @@ update_app(pg_assets* assets,
                 app_state.model_id += 1;
             }
             reset_view();
+        }
+
+        // Gamepad: Toggle Fullscreen
+        if (pg_button_active(&input->gp[0].view, config.input_repeat_rate))
+        {
+            app_state.fullscreen = !app_state.fullscreen;
         }
 
         b8 mouse_active = true;
