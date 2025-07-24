@@ -49,8 +49,7 @@ typedef struct
     b8 auto_rotate;
     u32 model_id;
     u32 animation_id;
-    f32 running_simulation_time; // in ms
-    f32 running_animation_time;  // in ms
+    f32 running_animation_time; // in ms
     pg_f32_2x previous_cursor_position;
     pg_f32_3x scaling;
     pg_f32_3x rotation;
@@ -67,6 +66,7 @@ typedef struct
     u32 max_vertex_count;
     u32 max_index_count;
     u32 max_material_count;
+    u32 max_animation_count;
     u32 total_texture_count;
 } models_metadata;
 
@@ -336,6 +336,8 @@ update_app(pg_assets* assets,
 {
     b8 ok = true;
 
+    f32 frame_time = app_state.metrics->cpu_last_frame_time;
+
     // Process input.
     pg_f32_2x cursor_delta = {0};
     {
@@ -381,9 +383,7 @@ update_app(pg_assets* assets,
         }
 #endif
 
-        if (mouse_active
-            && pg_button_active(&input->mouse.left,
-                                app_state.metrics->cpu_last_frame_time)
+        if (mouse_active && pg_button_active(&input->mouse.left, frame_time)
             && (!pg_f32_2x_eq(app_state.previous_cursor_position,
                               (pg_f32_2x){0})))
 
@@ -413,9 +413,9 @@ update_app(pg_assets* assets,
 
         if (app_state.animation_id < curr_model->animation_count)
         {
-            app_state.running_animation_time
-                += app_state.running_simulation_time;
+            app_state.running_animation_time += frame_time;
 
+            // Loop the animation.
             if (app_state.running_animation_time
                 > curr_model->animations[app_state.animation_id]
                       .total_animation_time)
@@ -432,34 +432,31 @@ update_app(pg_assets* assets,
         // Rotate camera.
         f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
         f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
-        f32 frame_time_dt = app_state.metrics->cpu_last_frame_time;
         if (app_state.auto_rotate)
         {
             app_state.camera.position.x
-                += pg_f32_deg_to_rad(auto_rotation_rate * frame_time_dt);
+                += pg_f32_deg_to_rad(auto_rotation_rate * frame_time);
         }
         else
         {
             app_state.camera.position.x += pg_f32_deg_to_rad(
-                manual_rotation_rate * cursor_delta.x * frame_time_dt);
+                manual_rotation_rate * cursor_delta.x * frame_time);
             app_state.camera.position.y += pg_f32_deg_to_rad(
-                manual_rotation_rate * cursor_delta.y * frame_time_dt);
+                manual_rotation_rate * cursor_delta.y * frame_time);
             app_state.camera.position.x += pg_f32_deg_to_rad(
-                manual_rotation_rate * input->gp[0].rs.x * frame_time_dt);
+                manual_rotation_rate * input->gp[0].rs.x * frame_time);
             app_state.camera.position.y += pg_f32_deg_to_rad(
-                manual_rotation_rate * input->gp[0].rs.y * frame_time_dt);
+                manual_rotation_rate * input->gp[0].rs.y * frame_time);
         }
 
         // Zoom camera.
         f32 zoom_rate = 1.0f / 150.0f;
         app_state.camera.position.z
-            -= zoom_rate * (u8)input->mouse.forward.pressed * frame_time_dt;
+            -= zoom_rate * (u8)input->mouse.forward.pressed * frame_time;
         app_state.camera.position.z
-            += zoom_rate * (u8)input->mouse.back.pressed * frame_time_dt;
-        app_state.camera.position.z
-            -= zoom_rate * input->gp[0].rt * frame_time_dt;
-        app_state.camera.position.z
-            += zoom_rate * input->gp[0].lt * frame_time_dt;
+            += zoom_rate * (u8)input->mouse.back.pressed * frame_time;
+        app_state.camera.position.z -= zoom_rate * input->gp[0].rt * frame_time;
+        app_state.camera.position.z += zoom_rate * input->gp[0].lt * frame_time;
 
         pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
                         (pg_f32_2x){.min = 0.0f, .max = PG_PI},
@@ -812,8 +809,6 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                    &err);
 
         pg_windows_update_metrics(&windows.metrics, &err);
-        app_state.running_simulation_time
-            += app_state.metrics->cpu_last_frame_time;
 
         if (app_state.gfx_api != gfx_api)
         {
