@@ -49,7 +49,6 @@ typedef struct
     b8 auto_rotate;
     u32 model_id;
     u32 animation_id;
-    f32 center_zoom;
     f32 running_simulation_time; // in ms
     f32 running_animation_time;  // in ms
     pg_f32_2x previous_cursor_position;
@@ -134,14 +133,19 @@ reset_view(void)
         }
         case MODEL_BOX_ANIMATED:
         {
-            app_state.scaling = pg_f32_3x_pack(0.5f);
+            app_state.scaling = pg_f32_3x_pack(0.45f);
             app_state.camera.position.y = PG_PI / 4.0f;
             break;
         }
         case MODEL_CORSET:
         {
-            app_state.scaling = pg_f32_3x_pack(30.0f);
-            app_state.translation.y = -0.8f;
+            app_state.scaling = pg_f32_3x_pack(35.0f);
+            app_state.translation.y = -1.0f;
+            break;
+        }
+        case MODEL_DAMAGED_HELMET:
+        {
+            app_state.scaling = pg_f32_3x_pack(1.125f);
             break;
         }
         case MODEL_FTM:
@@ -153,7 +157,7 @@ reset_view(void)
         }
         case MODEL_METAL_ROUGH_SPHERES:
         {
-            app_state.camera.position.z = 30.0f;
+            app_state.scaling = pg_f32_3x_pack(0.2f);
             break;
         }
         case MODEL_PLAYSTATION_1:
@@ -166,11 +170,10 @@ reset_view(void)
         case MODEL_WATER_BOTTLE:
         {
             app_state.scaling = pg_f32_3x_pack(8.0f);
-            app_state.camera.position.x = (3.0f * PG_PI) / 2.0f;
+            app_state.rotation.y = 225.0f;
             break;
         }
     }
-    app_state.center_zoom = app_state.camera.position.z;
 }
 
 FUNCTION void
@@ -386,8 +389,11 @@ update_app(pg_assets* assets,
                               (pg_f32_2x){0})))
 
         {
-            cursor_delta = pg_f32_2x_sub(input->mouse.cursor,
-                                         app_state.previous_cursor_position);
+            f32 cursor_multiplier = 100.0f;
+            cursor_delta = pg_f32_2x_mul(
+                pg_f32_2x_sub(input->mouse.cursor,
+                              app_state.previous_cursor_position),
+                pg_f32_2x_pack(cursor_multiplier));
         }
 
         if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
@@ -424,7 +430,6 @@ update_app(pg_assets* assets,
 
     // Simulate.
     {
-        f32 cursor_multiplier = 150.0f;
         while (app_state.running_simulation_time != 0.0f)
         {
             f32 dt = config.simulation_time_step;
@@ -433,46 +438,47 @@ update_app(pg_assets* assets,
                 dt = app_state.running_simulation_time;
             }
 
-            // Rotate camera.
-            f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
-            f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
-            if (app_state.auto_rotate)
-            {
-                app_state.camera.position.x
-                    += pg_f32_deg_to_rad(auto_rotation_rate * dt);
-            }
-            else
-            {
-                app_state.camera.position.x += pg_f32_deg_to_rad(
-                    manual_rotation_rate * (cursor_delta.x * cursor_multiplier)
-                    * dt);
-                app_state.camera.position.y += pg_f32_deg_to_rad(
-                    manual_rotation_rate * (cursor_delta.y * cursor_multiplier)
-                    * dt);
-                app_state.camera.position.x += pg_f32_deg_to_rad(
-                    manual_rotation_rate * input->gp[0].rs.x * dt);
-                app_state.camera.position.y += pg_f32_deg_to_rad(
-                    manual_rotation_rate * input->gp[0].rs.y * dt);
-            }
-
-            // Zoom camera.
-            f32 zoom_rate = app_state.center_zoom / 1000.0f;
-            app_state.camera.position.z
-                -= zoom_rate * (u8)input->mouse.forward.pressed * dt;
-            app_state.camera.position.z
-                += zoom_rate * (u8)input->mouse.back.pressed * dt;
-            app_state.camera.position.z -= zoom_rate * input->gp[0].rt * dt;
-            app_state.camera.position.z += zoom_rate * input->gp[0].lt * dt;
-
             app_state.running_simulation_time -= dt;
         }
 
-        pg_camera_clamp(
-            (pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
-            (pg_f32_2x){.min = 0.0f, .max = PG_PI},
-            (pg_f32_2x){.min = 1.0f, .max = app_state.center_zoom * 1.5f},
-            true,
-            &app_state.camera);
+        // Rotate camera.
+        f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
+        f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
+        f32 frame_time_dt = app_state.metrics->cpu_last_frame_time;
+        if (app_state.auto_rotate)
+        {
+            app_state.camera.position.x
+                += pg_f32_deg_to_rad(auto_rotation_rate * frame_time_dt);
+        }
+        else
+        {
+            app_state.camera.position.x += pg_f32_deg_to_rad(
+                manual_rotation_rate * cursor_delta.x * frame_time_dt);
+            app_state.camera.position.y += pg_f32_deg_to_rad(
+                manual_rotation_rate * cursor_delta.y * frame_time_dt);
+            app_state.camera.position.x += pg_f32_deg_to_rad(
+                manual_rotation_rate * input->gp[0].rs.x * frame_time_dt);
+            app_state.camera.position.y += pg_f32_deg_to_rad(
+                manual_rotation_rate * input->gp[0].rs.y * frame_time_dt);
+        }
+
+        // Zoom camera.
+        // TODO: Scale min, max, and zoom_rate based on model scaling.
+        f32 zoom_rate = app_state.camera.position.z / 1000.0f;
+        app_state.camera.position.z
+            -= zoom_rate * (u8)input->mouse.forward.pressed * frame_time_dt;
+        app_state.camera.position.z
+            += zoom_rate * (u8)input->mouse.back.pressed * frame_time_dt;
+        app_state.camera.position.z
+            -= zoom_rate * input->gp[0].rt * frame_time_dt;
+        app_state.camera.position.z
+            += zoom_rate * input->gp[0].lt * frame_time_dt;
+
+        pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
+                        (pg_f32_2x){.min = 0.0f, .max = PG_PI},
+                        (pg_f32_2x){.min = 1.0f, .max = 100.0f},
+                        true,
+                        &app_state.camera);
     }
 
     // Generate matrices.
@@ -485,7 +491,7 @@ update_app(pg_assets* assets,
     pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
         27.0f,
         render_res.width / render_res.height,
-        0.1f,
+        1.0f,
         100.0f);
     pg_f32_4x4 view_from_world
         = pg_f32_4x4_view_from_world(camera_position,
