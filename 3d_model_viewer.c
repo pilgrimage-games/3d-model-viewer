@@ -98,7 +98,6 @@ GLOBAL c8* model_names[] = {"None",
 
 GLOBAL pg_config config = {.gamepad_count = 1,
                            .input_repeat_rate = 750.0f,
-                           .simulation_time_step = (1.0f / 480.0f) * PG_MS_IN_S,
                            .permanent_mem_size = 1024u * PG_MEBIBYTE,
                            .transient_mem_size = 128u * PG_KIBIBYTE,
                            .min_gpu_mem_size = 512u * PG_MEBIBYTE};
@@ -430,17 +429,6 @@ update_app(pg_assets* assets,
 
     // Simulate.
     {
-        while (app_state.running_simulation_time != 0.0f)
-        {
-            f32 dt = config.simulation_time_step;
-            if (app_state.running_simulation_time < config.simulation_time_step)
-            {
-                dt = app_state.running_simulation_time;
-            }
-
-            app_state.running_simulation_time -= dt;
-        }
-
         // Rotate camera.
         f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
         f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
@@ -463,8 +451,7 @@ update_app(pg_assets* assets,
         }
 
         // Zoom camera.
-        // TODO: Scale min, max, and zoom_rate based on model scaling.
-        f32 zoom_rate = app_state.camera.position.z / 1000.0f;
+        f32 zoom_rate = 1.0f / 150.0f;
         app_state.camera.position.z
             -= zoom_rate * (u8)input->mouse.forward.pressed * frame_time_dt;
         app_state.camera.position.z
@@ -476,7 +463,7 @@ update_app(pg_assets* assets,
 
         pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
                         (pg_f32_2x){.min = 0.0f, .max = PG_PI},
-                        (pg_f32_2x){.min = 1.0f, .max = 100.0f},
+                        (pg_f32_2x){.min = 2.0f, .max = 10.0f},
                         true,
                         &app_state.camera);
     }
@@ -491,8 +478,8 @@ update_app(pg_assets* assets,
     pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
         27.0f,
         render_res.width / render_res.height,
-        1.0f,
-        100.0f);
+        0.01f,
+        16.0f);
     pg_f32_4x4 view_from_world
         = pg_f32_4x4_view_from_world(camera_position,
                                      app_state.camera.focal_point,
