@@ -165,7 +165,7 @@ float4
 get_base_color(pixel p, uint tex_offset, material_properties mp)
 {
     float4 base_color = p.color * mp.base_color_factor;
-    if (mp.has_texture & (1 << 0))
+    if (mp.has_texture & (1u << 0))
     {
         base_color *= textures[tex_offset + 0].Sample(ss, p.tex_coord);
     }
@@ -184,7 +184,7 @@ float
 get_metallic(pixel p, uint tex_offset, material_properties mp)
 {
     float metallic = mp.metallic_factor;
-    if (mp.has_texture & (1 << 1))
+    if (mp.has_texture & (1u << 1))
     {
         metallic *= textures[tex_offset + 1].Sample(ss, p.tex_coord).b;
     }
@@ -196,7 +196,7 @@ float
 get_roughness(pixel p, uint tex_offset, material_properties mp)
 {
     float roughness = mp.roughness_factor;
-    if (mp.has_texture & (1 << 1))
+    if (mp.has_texture & (1u << 1))
     {
         roughness *= textures[tex_offset + 1].Sample(ss, p.tex_coord).g;
     }
@@ -207,7 +207,7 @@ get_roughness(pixel p, uint tex_offset, material_properties mp)
 float3
 get_normal(pixel p, uint tex_offset, material_properties mp)
 {
-    if (mp.has_texture & (1 << 2))
+    if (mp.has_texture & (1u << 2))
     {
         // NOTE: Normals are remapped from [0, 1] to [-1, 1] and transformed
         // from tangent space to world space.
@@ -229,7 +229,7 @@ float3
 get_emissive(pixel p, uint tex_offset, material_properties mp)
 {
     float3 emissive = mp.emissive_factor;
-    if (mp.has_texture & (1 << 3))
+    if (mp.has_texture & (1u << 3))
     {
         emissive *= textures[tex_offset + 3].Sample(ss, p.tex_coord).rgb;
     }

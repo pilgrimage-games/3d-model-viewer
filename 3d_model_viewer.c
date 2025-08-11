@@ -2,9 +2,6 @@
 #define PG_APP_GPU_RENDERING
 #define PG_APP_IMGUI
 
-#define CAMERA_AUTO_ROTATION_RATE 30.0f    // degrees/sec
-#define CAMERA_MANUAL_ROTATION_RATE 135.0f // degrees/sec
-
 #if defined(WINDOWS)
 #include <windows/pg_windows.h>
 #else
@@ -19,6 +16,18 @@ typedef enum
     GRAPHICS_BUFFER_MATERIAL_PROPERTIES_SB,
     GRAPHICS_BUFFER_COUNT
 } graphics_buffer;
+
+typedef enum
+{
+    INPUT_ACTION_TYPE_NONE,
+    INPUT_ACTION_TYPE_NEXT,
+    INPUT_ACTION_TYPE_PREVIOUS,
+    INPUT_ACTION_TYPE_ROTATE,
+    INPUT_ACTION_TYPE_ZOOM_IN,
+    INPUT_ACTION_TYPE_ZOOM_OUT,
+    INPUT_ACTION_TYPE_ZOOM,
+    INPUT_ACTION_TYPE_COUNT
+} input_action_type;
 
 // NOTE: This represents constant buffer data, which requires 16-byte alignment.
 // This may require padding a struct member to 16 bytes.
@@ -43,6 +52,12 @@ typedef struct
 
 typedef struct
 {
+    f32 repeat_rate;
+    input_action_type type; // align: 4
+} input_action;
+
+typedef struct
+{
     b8 fullscreen;
     b8 vsync;
     b8 wireframe_mode;
@@ -50,13 +65,13 @@ typedef struct
     u32 model_id;
     u32 animation_id;
     f32 running_animation_time; // in ms
-    pg_f32_2x previous_cursor_position;
     pg_f32_3x scaling;
     pg_f32_3x rotation;
     pg_f32_3x translation;
-    pg_camera camera;                   // align: 4
-    pg_graphics_api gfx_api;            // align: 4
-    pg_graphics_api supported_gfx_apis; // align: 4
+    pg_camera camera;                                         // align: 4
+    input_action input_action_map[PG_INPUT_EVENT_TYPE_COUNT]; // align: 4
+    pg_graphics_api gfx_api;                                  // align: 4
+    pg_graphics_api supported_gfx_apis;                       // align: 4
     pg_graphics_metrics* metrics;
 } application_state;
 
@@ -96,10 +111,10 @@ GLOBAL c8* model_names[] = {"None",
                             "Water Bottle"};
 
 GLOBAL pg_config config = {.gamepad_count = 1,
-                           .input_repeat_rate = 750.0f,
-                           .permanent_mem_size = 1024u * PG_MEBIBYTE,
-                           .transient_mem_size = 128u * PG_KIBIBYTE,
-                           .min_gpu_mem_size = 512u * PG_MEBIBYTE};
+                           .input_queue_event_count = 10,
+                           .permanent_mem_size = PG_MEBIBYTE(1024),
+                           .transient_mem_size = PG_KIBIBYTE(128),
+                           .min_gpu_mem_size = PG_MEBIBYTE(512)};
 
 GLOBAL application_state app_state
     = {.vsync = true,
@@ -116,61 +131,50 @@ reset_view(void)
     app_state.translation = (pg_f32_3x){0};
     app_state.camera.position
         = (pg_f32_3x){.x = PG_PI / 2.0f, .y = PG_PI / 2.0f, .z = 6.0f};
-    switch (app_state.model_id)
+
+    if (app_state.model_id == MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT)
     {
-        case MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT:
-        {
-            app_state.scaling = pg_f32_3x_pack(0.8f);
-            break;
-        }
-        case MODEL_BAKER_AND_THE_BRIDGE:
-        {
-            app_state.scaling = pg_f32_3x_pack(0.06f);
-            app_state.camera.position.y = PG_PI / 3.0f;
-            break;
-        }
-        case MODEL_BOX_ANIMATED:
-        {
-            app_state.scaling = pg_f32_3x_pack(0.45f);
-            app_state.camera.position.y = PG_PI / 4.0f;
-            break;
-        }
-        case MODEL_CORSET:
-        {
-            app_state.scaling = pg_f32_3x_pack(35.0f);
-            app_state.translation.y = -1.0f;
-            break;
-        }
-        case MODEL_DAMAGED_HELMET:
-        {
-            app_state.scaling = pg_f32_3x_pack(1.125f);
-            break;
-        }
-        case MODEL_FTM:
-        {
-            app_state.scaling = pg_f32_3x_pack(0.13f);
-            app_state.rotation.y = 135.0f;
-            app_state.camera.position.y = PG_PI / 2.5f;
-            break;
-        }
-        case MODEL_METAL_ROUGH_SPHERES:
-        {
-            app_state.scaling = pg_f32_3x_pack(0.2f);
-            break;
-        }
-        case MODEL_PLAYSTATION_1:
-        {
-            app_state.scaling = pg_f32_3x_pack(0.5f);
-            app_state.rotation.x = 120.0f;
-            app_state.rotation.z = 270.0f;
-            break;
-        }
-        case MODEL_WATER_BOTTLE:
-        {
-            app_state.scaling = pg_f32_3x_pack(8.0f);
-            app_state.rotation.y = 225.0f;
-            break;
-        }
+        app_state.scaling = pg_f32_3x_pack(0.8f);
+    }
+    else if (app_state.model_id == MODEL_BAKER_AND_THE_BRIDGE)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.06f);
+        app_state.camera.position.y = PG_PI / 3.0f;
+    }
+    else if (app_state.model_id == MODEL_BOX_ANIMATED)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.45f);
+        app_state.camera.position.y = PG_PI / 4.0f;
+    }
+    else if (app_state.model_id == MODEL_CORSET)
+    {
+        app_state.scaling = pg_f32_3x_pack(35.0f);
+        app_state.translation.y = -1.0f;
+    }
+    else if (app_state.model_id == MODEL_DAMAGED_HELMET)
+    {
+        app_state.scaling = pg_f32_3x_pack(1.125f);
+    }
+    else if (app_state.model_id == MODEL_FTM)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.13f);
+        app_state.rotation.y = 135.0f;
+        app_state.camera.position.y = PG_PI / 2.5f;
+    }
+    else if (app_state.model_id == MODEL_METAL_ROUGH_SPHERES)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.2f);
+    }
+    else if (app_state.model_id == MODEL_PLAYSTATION_1)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.5f);
+        app_state.rotation.x = 120.0f;
+        app_state.rotation.z = 270.0f;
+    }
+    else if (app_state.model_id == MODEL_WATER_BOTTLE)
+    {
+        app_state.scaling = pg_f32_3x_pack(8.0f);
+        app_state.rotation.y = 225.0f;
     }
 }
 
@@ -209,7 +213,7 @@ imgui_ui(void)
     if (mouse_controls_active)
     {
         ImGui_Text("[Left Click + Drag]: Rotate");
-        ImGui_Text("[Forward/Back]: Zoom In/Zoom Out");
+        ImGui_Text("[Scroll]: Zoom In/Zoom Out");
     }
 
     b8 keyboard_controls_active
@@ -217,8 +221,8 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (keyboard_controls_active)
     {
-        ImGui_Text("[Left/Up]: Previous Model");
-        ImGui_Text("[Right/Down]: Next Model");
+        ImGui_Text("[W/A/Left/Up]: Previous Model");
+        ImGui_Text("[D/S/Right/Down]: Next Model");
         ImGui_Text("[Alt+Enter]: Toggle Fullscreen");
     }
 
@@ -229,9 +233,8 @@ imgui_ui(void)
     {
         ImGui_Text("[D-Pad Left/Up]: Previous Model");
         ImGui_Text("[D-Pad Right/Down]: Next Model");
-        ImGui_Text("[Right Thumbstick]: Rotate");
+        ImGui_Text("[Left/Right Stick]: Rotate");
         ImGui_Text("[Right Trigger/Left Trigger]: Zoom In/Zoom Out");
-        ImGui_Text("[View]: Toggle Fullscreen");
     }
 #endif
 }
@@ -240,6 +243,7 @@ FUNCTION void
 init_app(pg_assets* assets,
          pg_scratch_allocator* permanent_mem,
          models_metadata* metadata,
+         pg_input_queue* input_queue,
          pg_graphics_renderer_data* renderer_data,
          pg_error* err)
 {
@@ -268,6 +272,71 @@ init_app(pg_assets* assets,
         for (u32 j = 0; j < model->material_count; j += 1)
         {
             metadata->total_texture_count += model->materials[j].texture_count;
+        }
+    }
+
+    // Initialize input queue.
+    ok &= pg_scratch_alloc(permanent_mem,
+                           config.input_queue_event_count
+                               * sizeof(pg_input_event),
+                           alignof(pg_input_event),
+                           &input_queue->events);
+    if (!ok)
+    {
+        PG_ERROR_MAJOR("failed to get memory for input queue");
+    }
+    input_queue->event_count = config.input_queue_event_count;
+
+    // Set input action map.
+    for (pg_input_event_type et = 0; et < PG_INPUT_EVENT_TYPE_COUNT; et += 1)
+    {
+        input_action* at = &app_state.input_action_map[et];
+        switch (et)
+        {
+            case PG_KEYBOARD_S:
+            case PG_KEYBOARD_DOWN:
+            case PG_GAMEPAD_DOWN:
+            case PG_KEYBOARD_D:
+            case PG_KEYBOARD_RIGHT:
+            case PG_GAMEPAD_RIGHT:
+            {
+                at->repeat_rate = PG_MILLISECOND(1.0f / 2.0f);
+                at->type = INPUT_ACTION_TYPE_NEXT;
+                break;
+            }
+            case PG_KEYBOARD_W:
+            case PG_KEYBOARD_UP:
+            case PG_GAMEPAD_UP:
+            case PG_KEYBOARD_A:
+            case PG_KEYBOARD_LEFT:
+            case PG_GAMEPAD_LEFT:
+            {
+                at->repeat_rate = PG_MILLISECOND(1.0f / 2.0f);
+                at->type = INPUT_ACTION_TYPE_PREVIOUS;
+                break;
+            }
+            case PG_MOUSE_MOVED:
+            case PG_GAMEPAD_LS_MOVED:
+            case PG_GAMEPAD_RS_MOVED:
+            {
+                at->type = INPUT_ACTION_TYPE_ROTATE;
+                break;
+            }
+            case PG_GAMEPAD_LT:
+            {
+                at->type = INPUT_ACTION_TYPE_ZOOM_OUT;
+                break;
+            }
+            case PG_GAMEPAD_RT:
+            {
+                at->type = INPUT_ACTION_TYPE_ZOOM_IN;
+                break;
+            }
+            case PG_MOUSE_SCROLLED:
+            {
+                at->type = INPUT_ACTION_TYPE_ZOOM;
+                break;
+            }
         }
     }
 
@@ -326,8 +395,76 @@ init_app(pg_assets* assets,
 }
 
 FUNCTION void
+process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
+{
+    f32 frame_time = app_state.metrics->cpu_last_frame_time;
+
+    switch (at)
+    {
+        case INPUT_ACTION_TYPE_NEXT:
+        {
+            app_state.model_id = (app_state.model_id == MODEL_COUNT - 1)
+                                     ? 1
+                                     : app_state.model_id + 1;
+            reset_view();
+            break;
+        }
+        case INPUT_ACTION_TYPE_PREVIOUS:
+        {
+            app_state.model_id = (app_state.model_id == 1)
+                                     ? MODEL_COUNT - 1
+                                     : app_state.model_id - 1;
+            reset_view();
+            break;
+        }
+        case INPUT_ACTION_TYPE_ROTATE:
+        {
+            app_state.auto_rotate = false;
+
+            f32 manual_rotation_rate = 135.0f; // degrees/ms
+            pg_f32_2x rotation_speed
+                = pg_f32_2x_mul(pg_f32_2x_pack((manual_rotation_rate
+                                                * (1.0f / PG_MILLISECOND(1)))
+                                               * frame_time),
+                                event_value);
+            app_state.camera.position.x += pg_f32_deg_to_rad(rotation_speed.x);
+            app_state.camera.position.y += pg_f32_deg_to_rad(rotation_speed.y);
+            pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
+                            (pg_f32_2x){.min = 0.0f, .max = PG_PI},
+                            (pg_f32_2x){.min = 2.0f, .max = 10.0f},
+                            true,
+                            &app_state.camera);
+            break;
+        }
+        case INPUT_ACTION_TYPE_ZOOM_IN:
+        case INPUT_ACTION_TYPE_ZOOM_OUT:
+        case INPUT_ACTION_TYPE_ZOOM:
+        {
+            if (at == INPUT_ACTION_TYPE_ZOOM_OUT)
+            {
+                event_value.x *= -1.0f;
+            }
+            f32 zoom_rate = 1.0f / 150.0f;
+            f32 zoom_speed = zoom_rate * event_value.x * frame_time;
+            app_state.camera.position.z -= zoom_speed;
+            pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
+                            (pg_f32_2x){.min = 0.0f, .max = PG_PI},
+                            (pg_f32_2x){.min = 2.0f, .max = 10.0f},
+                            true,
+                            &app_state.camera);
+            break;
+        }
+        default:
+        {
+            PG_ERROR_MINOR("unexpected input action type");
+            break;
+        }
+    }
+}
+
+FUNCTION void
 update_app(pg_assets* assets,
-           pg_input* input,
+           pg_input_queue* iq,
            models_metadata* metadata,
            pg_f32_2x render_res,
            pg_scratch_allocator* transient_mem,
@@ -339,72 +476,95 @@ update_app(pg_assets* assets,
     f32 frame_time = app_state.metrics->cpu_last_frame_time;
 
     // Process input.
-    pg_f32_2x cursor_delta = {0};
     {
-        // Left/Up: Previous Model
-        if (pg_button_active(&input->kbd.left, config.input_repeat_rate)
-            || pg_button_active(&input->kbd.up, config.input_repeat_rate)
-            || pg_button_active(&input->gp[0].left, config.input_repeat_rate)
-            || pg_button_active(&input->gp[0].up, config.input_repeat_rate))
+        // Process inputs in event queue.
+        for (iq->read_idx; iq->read_idx != iq->write_idx;
+             iq->read_idx = (iq->read_idx + 1) % iq->event_count)
         {
-            if (app_state.model_id == 1)
+            pg_input_event ie = iq->events[iq->read_idx];
+            input_action* ia = &app_state.input_action_map[ie.event_type];
+
+            // Skip any input event that does not have a mapped input action.
+            if (!ia->type)
             {
-                app_state.model_id = assets->model_count - 1;
+                continue;
             }
-            else
+
+            pg_f32_2x event_value = ie.value;
             {
-                app_state.model_id -= 1;
-            }
-            reset_view();
-        }
+                // Handle mouse click-to-drag.
+                if (ia->type == INPUT_ACTION_TYPE_ROTATE
+                    && ie.input_type == PG_INPUT_TYPE_MOUSE)
+                {
+                    // Skip if left mouse button is not held down.
+                    if (iq->duration_held[PG_MOUSE_LEFT] == 0.0f)
+                    {
+                        continue;
+                    }
 
-        // Right/Down: Next Model
-        if (pg_button_active(&input->kbd.right, config.input_repeat_rate)
-            || pg_button_active(&input->kbd.down, config.input_repeat_rate)
-            || pg_button_active(&input->gp[0].right, config.input_repeat_rate)
-            || pg_button_active(&input->gp[0].down, config.input_repeat_rate))
-        {
-            if (app_state.model_id == assets->model_count - 1)
+                    // Compute the vector from the previous mouse position to
+                    // the current one.
+                    b8 drag = false;
+                    for (u32 read_idx = (iq->read_idx + iq->event_count - 1)
+                                        % iq->event_count;
+                         read_idx != iq->write_idx;
+                         read_idx
+                         = (read_idx + iq->event_count - 1) % iq->event_count)
+                    {
+                        pg_input_event prev_ie = iq->events[read_idx];
+
+                        // Don't look past the start of the chord.
+                        if (prev_ie.event_type == PG_MOUSE_LEFT)
+                        {
+                            break;
+                        }
+
+                        if (prev_ie.event_type == PG_MOUSE_MOVED)
+                        {
+                            f32 cursor_multipler = 100.0f;
+                            event_value = pg_f32_2x_mul(
+                                pg_f32_2x_sub(ie.value, prev_ie.value),
+                                pg_f32_2x_pack(cursor_multipler));
+                            drag = true;
+                            break;
+                        }
+                    }
+
+                    // Skip if mouse not dragged.
+                    if (!drag)
+                    {
+                        continue;
+                    }
+                }
+
+                // Handle mouse scrolling.
+                if (ia->type == INPUT_ACTION_TYPE_ZOOM
+                    && ie.event_type == PG_MOUSE_SCROLLED)
+                {
+                    f32 scroll_multiplier = 5.0f;
+                    event_value
+                        = pg_f32_2x_mul(ie.value,
+                                        pg_f32_2x_pack(scroll_multiplier));
+                }
+            }
+
+            if (iq->duration_held[ie.event_type] > 0.0f)
             {
-                app_state.model_id = 1;
+                process_action(ia->type, event_value, err);
             }
-            else
+        }
+
+        // Process held inputs.
+        for (pg_input_event_type et = 0; et < CAP(iq->duration_held); et += 1)
+        {
+            input_action* ia = &app_state.input_action_map[et];
+
+            if (ia->repeat_rate != 0.0f
+                && iq->duration_held[et] > ia->repeat_rate)
             {
-                app_state.model_id += 1;
+                process_action(ia->type, pg_f32_2x_pack(0.0f), err);
+                iq->duration_held[et] -= ia->repeat_rate;
             }
-            reset_view();
-        }
-
-        // Gamepad: Toggle Fullscreen
-        if (pg_button_active(&input->gp[0].view, config.input_repeat_rate))
-        {
-            app_state.fullscreen = !app_state.fullscreen;
-        }
-
-        b8 mouse_active = true;
-#if defined(PG_APP_IMGUI)
-        if (ImGui_GetIO()->WantCaptureMouse)
-        {
-            mouse_active = false;
-        }
-#endif
-
-        if (mouse_active && pg_button_active(&input->mouse.left, frame_time)
-            && (!pg_f32_2x_eq(app_state.previous_cursor_position,
-                              (pg_f32_2x){0})))
-
-        {
-            f32 cursor_multiplier = 100.0f;
-            cursor_delta = pg_f32_2x_mul(
-                pg_f32_2x_sub(input->mouse.cursor,
-                              app_state.previous_cursor_position),
-                pg_f32_2x_pack(cursor_multiplier));
-        }
-
-        if (cursor_delta.x != 0.0f || cursor_delta.y != 0.0f
-            || input->gp[0].rs.x != 0.0f || input->gp[0].rs.y != 0.0f)
-        {
-            app_state.auto_rotate = false;
         }
     }
 
@@ -412,6 +572,20 @@ update_app(pg_assets* assets,
 
     // Animate.
     {
+        if (app_state.auto_rotate)
+        {
+            f32 auto_rotation_rate = 30.0f; // degrees/sec
+            f32 rotation_speed
+                = (auto_rotation_rate * (1.0f / PG_MILLISECOND(1)))
+                  * frame_time;
+            app_state.camera.position.x += pg_f32_deg_to_rad(rotation_speed);
+            pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
+                            (pg_f32_2x){.min = 0.0f, .max = PG_PI},
+                            (pg_f32_2x){.min = 2.0f, .max = 10.0f},
+                            true,
+                            &app_state.camera);
+        }
+
         if (app_state.model_id != metadata->model_id_last_frame)
         {
             app_state.running_animation_time = 0.0f;
@@ -431,44 +605,6 @@ update_app(pg_assets* assets,
                            .total_animation_time;
             }
         }
-    }
-
-    // Simulate.
-    {
-        // Rotate camera.
-        f32 auto_rotation_rate = CAMERA_AUTO_ROTATION_RATE / PG_MS_IN_S;
-        f32 manual_rotation_rate = CAMERA_MANUAL_ROTATION_RATE / PG_MS_IN_S;
-        if (app_state.auto_rotate)
-        {
-            app_state.camera.position.x
-                += pg_f32_deg_to_rad(auto_rotation_rate * frame_time);
-        }
-        else
-        {
-            app_state.camera.position.x += pg_f32_deg_to_rad(
-                manual_rotation_rate * cursor_delta.x * frame_time);
-            app_state.camera.position.y += pg_f32_deg_to_rad(
-                manual_rotation_rate * cursor_delta.y * frame_time);
-            app_state.camera.position.x += pg_f32_deg_to_rad(
-                manual_rotation_rate * input->gp[0].rs.x * frame_time);
-            app_state.camera.position.y += pg_f32_deg_to_rad(
-                manual_rotation_rate * input->gp[0].rs.y * frame_time);
-        }
-
-        // Zoom camera.
-        f32 zoom_rate = 1.0f / 150.0f;
-        app_state.camera.position.z
-            -= zoom_rate * (u8)input->mouse.forward.pressed * frame_time;
-        app_state.camera.position.z
-            += zoom_rate * (u8)input->mouse.back.pressed * frame_time;
-        app_state.camera.position.z -= zoom_rate * input->gp[0].rt * frame_time;
-        app_state.camera.position.z += zoom_rate * input->gp[0].lt * frame_time;
-
-        pg_camera_clamp((pg_f32_2x){.min = 0.0f, .max = 2.0f * PG_PI},
-                        (pg_f32_2x){.min = 0.0f, .max = PG_PI},
-                        (pg_f32_2x){.min = 2.0f, .max = 10.0f},
-                        true,
-                        &app_state.camera);
     }
 
     // Generate matrices.
@@ -513,82 +649,72 @@ update_app(pg_assets* assets,
         // Update buffers.
         for (graphics_buffer gb = 0; gb < GRAPHICS_BUFFER_COUNT; gb += 1)
         {
-            switch (gb)
+            if (gb == GRAPHICS_BUFFER_PER_FRAME_CB)
             {
-                case GRAPHICS_BUFFER_PER_FRAME_CB:
+                pg_f32_4x4 clip_from_world
+                    = pg_f32_4x4_mul(clip_from_view, view_from_world);
+
+                per_frame_cb* per_frame;
+                ok &= pg_scratch_alloc(transient_mem,
+                                       sizeof(per_frame_cb),
+                                       alignof(per_frame_cb),
+                                       &per_frame);
+                if (!ok)
                 {
-                    pg_f32_4x4 clip_from_world
-                        = pg_f32_4x4_mul(clip_from_view, view_from_world);
-
-                    per_frame_cb* per_frame;
-                    ok &= pg_scratch_alloc(transient_mem,
-                                           sizeof(per_frame_cb),
-                                           alignof(per_frame_cb),
-                                           &per_frame);
-                    if (!ok)
-                    {
-                        PG_ERROR_MAJOR("failed to get memory for per frame "
-                                       "constant buffer");
-                    }
-                    *per_frame
-                        = (per_frame_cb){.world_from_model = world_from_model,
-                                         .clip_from_world = clip_from_world,
-                                         .camera_pos = camera_position};
-
-                    renderer_data->buffer_data[gb].elem_count = 1;
-                    renderer_data->buffer_data[gb].buffer = per_frame;
-
-                    break;
+                    PG_ERROR_MAJOR("failed to get memory for per frame "
+                                   "constant buffer");
                 }
-                case GRAPHICS_BUFFER_VERTEX_SB:
-                {
-                    if (app_state.model_id != metadata->model_id_last_frame)
-                    {
-                        renderer_data->buffer_data[gb].elem_count
-                            = curr_model->vertex_count;
-                        renderer_data->buffer_data[gb].buffer
-                            = curr_model->vertices;
-                    }
-                    break;
-                }
-                case GRAPHICS_BUFFER_INDEX_SB:
-                {
-                    if (app_state.model_id != metadata->model_id_last_frame)
-                    {
-                        renderer_data->buffer_data[gb].elem_count
-                            = curr_model->index_count;
-                        renderer_data->buffer_data[gb].buffer
-                            = curr_model->indices;
-                    }
-                    break;
-                }
-                case GRAPHICS_BUFFER_MATERIAL_PROPERTIES_SB:
-                {
-                    pg_asset_material_properties* material_properties;
-                    ok &= pg_scratch_alloc(
-                        transient_mem,
-                        curr_model->material_count
-                            * sizeof(pg_asset_material_properties),
-                        alignof(pg_asset_material_properties),
-                        &material_properties);
-                    if (!ok)
-                    {
-                        PG_ERROR_MAJOR(
-                            "failed to get memory for material properties");
-                    }
+                *per_frame
+                    = (per_frame_cb){.world_from_model = world_from_model,
+                                     .clip_from_world = clip_from_world,
+                                     .camera_pos = camera_position};
 
-                    for (u32 i = 0; i < curr_model->material_count; i += 1)
-                    {
-                        material_properties[i]
-                            = curr_model->materials[i].properties;
-                    }
-
+                renderer_data->buffer_data[gb].elem_count = 1;
+                renderer_data->buffer_data[gb].buffer = per_frame;
+            }
+            else if (gb == GRAPHICS_BUFFER_VERTEX_SB)
+            {
+                if (app_state.model_id != metadata->model_id_last_frame)
+                {
                     renderer_data->buffer_data[gb].elem_count
-                        = curr_model->material_count;
-                    renderer_data->buffer_data[gb].buffer = material_properties;
-
-                    break;
+                        = curr_model->vertex_count;
+                    renderer_data->buffer_data[gb].buffer
+                        = curr_model->vertices;
                 }
+            }
+            else if (gb == GRAPHICS_BUFFER_INDEX_SB)
+            {
+                if (app_state.model_id != metadata->model_id_last_frame)
+                {
+                    renderer_data->buffer_data[gb].elem_count
+                        = curr_model->index_count;
+                    renderer_data->buffer_data[gb].buffer = curr_model->indices;
+                }
+            }
+            else if (gb == GRAPHICS_BUFFER_MATERIAL_PROPERTIES_SB)
+            {
+                pg_asset_material_properties* material_properties;
+                ok &= pg_scratch_alloc(
+                    transient_mem,
+                    curr_model->material_count
+                        * sizeof(pg_asset_material_properties),
+                    alignof(pg_asset_material_properties),
+                    &material_properties);
+                if (!ok)
+                {
+                    PG_ERROR_MAJOR(
+                        "failed to get memory for material properties");
+                }
+
+                for (u32 i = 0; i < curr_model->material_count; i += 1)
+                {
+                    material_properties[i]
+                        = curr_model->materials[i].properties;
+                }
+
+                renderer_data->buffer_data[gb].elem_count
+                    = curr_model->material_count;
+                renderer_data->buffer_data[gb].buffer = material_properties;
             }
         }
 
@@ -748,16 +874,16 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
     models_metadata metadata = {0};
 
-    pg_windows_init_window(&windows.window,
+    pg_windows_init_window(&windows,
                            inst,
                            config.fixed_aspect_ratio_width,
                            config.fixed_aspect_ratio_height,
                            &app_state.fullscreen,
                            &err);
-    pg_windows_init_mem(&windows,
-                        config.permanent_mem_size,
-                        config.transient_mem_size,
-                        &err);
+    pg_windows_init_memory(&windows,
+                           config.permanent_mem_size,
+                           config.transient_mem_size,
+                           &err);
     pg_assets* assets = pg_assets_read_pga(&windows.permanent_mem,
                                            &pg_windows_read_file,
                                            &err);
@@ -767,6 +893,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     init_app(assets,
              &windows.permanent_mem,
              &metadata,
+             &windows.input_queue,
              &windows.gfx.renderer_data,
              &err);
 
@@ -791,14 +918,10 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         pg_graphics_api gfx_api = app_state.gfx_api;
 
-        app_state.previous_cursor_position = windows.input.mouse.cursor;
-        pg_windows_update_input(&windows,
-                                config.gamepad_count,
-                                &app_state.fullscreen,
-                                &err);
+        pg_windows_update_input(&windows, config.gamepad_count, &err);
 
         update_app(assets,
-                   &windows.input,
+                   &windows.input_queue,
                    &metadata,
                    windows.window.render_res,
                    &windows.transient_mem,
