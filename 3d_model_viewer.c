@@ -1,6 +1,6 @@
-#define PG_APP_NAME "3D Model Viewer"
-#define PG_APP_GPU_RENDERING
-#define PG_APP_IMGUI
+#define APP_NAME "3D Model Viewer"
+#define APP_GPU_RENDERING
+#define APP_IMGUI
 
 #if defined(WINDOWS)
 #include <windows/pg_windows.h>
@@ -181,7 +181,7 @@ reset_view(void)
 FUNCTION void
 imgui_ui(void)
 {
-#if defined(PG_APP_IMGUI)
+#if defined(APP_IMGUI)
     pg_imgui_graphics_header(app_state.supported_gfx_apis,
                              app_state.metrics,
                              &app_state.gfx_api,
@@ -240,19 +240,26 @@ imgui_ui(void)
 }
 
 FUNCTION void
-init_app(pg_assets* assets,
+init_app(pg_file_read_fp pg_file_read,
          pg_scratch_allocator* permanent_mem,
+         pg_assets** assets,
          models_metadata* metadata,
          pg_input_queue* input_queue,
          pg_graphics_renderer_data* renderer_data,
          pg_error* err)
 {
-    b8 ok = true;
+    // Read assets file.
+    *assets = pg_assets_read_pga(pg_string_create(PG_ASSET_FILE_NAME, 0, err),
+                                 pg_file_read,
+                                 permanent_mem,
+                                 err);
+    pg_assets_verify(*assets, 0, 0, 0, 0, MODEL_COUNT, err);
+    static_assert(CAP(model_names) == MODEL_COUNT);
 
     // Get models metadata.
-    for (u32 i = 0; i < assets->model_count; i += 1)
+    for (u32 i = 0; i < (*assets)->model_count; i += 1)
     {
-        pg_asset_model* model = &assets->models[i];
+        pg_asset_model* model = &(*assets)->models[i];
 
         if (model->vertex_count > metadata->max_vertex_count)
         {
@@ -276,15 +283,11 @@ init_app(pg_assets* assets,
     }
 
     // Initialize input queue.
-    ok &= pg_scratch_alloc(permanent_mem,
-                           config.input_queue_event_count
-                               * sizeof(pg_input_event),
-                           alignof(pg_input_event),
-                           &input_queue->events);
-    if (!ok)
-    {
-        PG_ERROR_MAJOR("failed to get memory for input queue");
-    }
+    pg_scratch_alloc(permanent_mem,
+                     config.input_queue_event_count * sizeof(pg_input_event),
+                     alignof(pg_input_event),
+                     &input_queue->events,
+                     err);
     input_queue->event_count = config.input_queue_event_count;
 
     // Set input action map.
@@ -367,28 +370,21 @@ init_app(pg_assets* assets,
             .depth_buffer_bit_count = 32,
             .constant_count = sizeof(constants_cb) / sizeof(u32),
             .buffer_count = CAP(buffer_data),
-            .max_texture_count = assets->model_count
+            .max_texture_count = (*assets)->model_count
                                  * metadata->max_material_count
                                  * PG_TEXTURE_TYPE_COUNT};
 
-        ok &= pg_scratch_alloc(permanent_mem,
-                               renderer_data->buffer_count
-                                   * sizeof(pg_graphics_buffer_data),
-                               alignof(pg_graphics_buffer_data),
-                               &renderer_data->buffer_data);
-        if (!ok)
-        {
-            PG_ERROR_MAJOR("failed to get memory for buffer data");
-        }
-        ok &= pg_copy(
-            buffer_data,
-            renderer_data->buffer_count * sizeof(pg_graphics_buffer_data),
-            renderer_data->buffer_data,
-            renderer_data->buffer_count * sizeof(pg_graphics_buffer_data));
-        if (!ok)
-        {
-            PG_ERROR_MAJOR("failed to copy buffer data to renderer data");
-        }
+        pg_scratch_alloc(permanent_mem,
+                         renderer_data->buffer_count
+                             * sizeof(pg_graphics_buffer_data),
+                         alignof(pg_graphics_buffer_data),
+                         &renderer_data->buffer_data,
+                         err);
+        pg_copy(buffer_data,
+                renderer_data->buffer_count * sizeof(pg_graphics_buffer_data),
+                renderer_data->buffer_data,
+                renderer_data->buffer_count * sizeof(pg_graphics_buffer_data),
+                err);
     }
 
     reset_view();
@@ -471,8 +467,6 @@ update_app(pg_assets* assets,
            pg_graphics_renderer_data* renderer_data,
            pg_error* err)
 {
-    b8 ok = true;
-
     f32 frame_time = app_state.metrics->cpu_last_frame_time;
 
     // Process input.
@@ -655,15 +649,11 @@ update_app(pg_assets* assets,
                     = pg_f32_4x4_mul(clip_from_view, view_from_world);
 
                 per_frame_cb* per_frame;
-                ok &= pg_scratch_alloc(transient_mem,
-                                       sizeof(per_frame_cb),
-                                       alignof(per_frame_cb),
-                                       &per_frame);
-                if (!ok)
-                {
-                    PG_ERROR_MAJOR("failed to get memory for per frame "
-                                   "constant buffer");
-                }
+                pg_scratch_alloc(transient_mem,
+                                 sizeof(per_frame_cb),
+                                 alignof(per_frame_cb),
+                                 &per_frame,
+                                 err);
                 *per_frame
                     = (per_frame_cb){.world_from_model = world_from_model,
                                      .clip_from_world = clip_from_world,
@@ -694,17 +684,12 @@ update_app(pg_assets* assets,
             else if (gb == GRAPHICS_BUFFER_MATERIAL_PROPERTIES_SB)
             {
                 pg_asset_material_properties* material_properties;
-                ok &= pg_scratch_alloc(
-                    transient_mem,
-                    curr_model->material_count
-                        * sizeof(pg_asset_material_properties),
-                    alignof(pg_asset_material_properties),
-                    &material_properties);
-                if (!ok)
-                {
-                    PG_ERROR_MAJOR(
-                        "failed to get memory for material properties");
-                }
+                pg_scratch_alloc(transient_mem,
+                                 curr_model->material_count
+                                     * sizeof(pg_asset_material_properties),
+                                 alignof(pg_asset_material_properties),
+                                 &material_properties,
+                                 err);
 
                 for (u32 i = 0; i < curr_model->material_count; i += 1)
                 {
@@ -720,15 +705,12 @@ update_app(pg_assets* assets,
 
         // Declare (required and optional) textures for upcoming frame.
         {
-            ok &= pg_scratch_alloc(transient_mem,
-                                   metadata->total_texture_count
-                                       * sizeof(pg_graphics_texture_data),
-                                   alignof(pg_graphics_texture_data),
-                                   &renderer_data->texture_data);
-            if (!ok)
-            {
-                PG_ERROR_MAJOR("failed to get memory for texture data");
-            }
+            pg_scratch_alloc(transient_mem,
+                             metadata->total_texture_count
+                                 * sizeof(pg_graphics_texture_data),
+                             alignof(pg_graphics_texture_data),
+                             &renderer_data->texture_data,
+                             err);
 
             // Consider textures for the current model required and textures
             // for all other models in priority order (i.e. +/-1, +/-2, etc)
@@ -809,29 +791,22 @@ update_app(pg_assets* assets,
 
         // Set draw data.
         {
-            ok &= pg_scratch_alloc(transient_mem,
-                                   drawables.drawable_count
-                                       * sizeof(pg_graphics_draw_data),
-                                   alignof(pg_graphics_draw_data),
-                                   &renderer_data->draw_data);
-            if (!ok)
-            {
-                PG_ERROR_MAJOR("failed to get memory for draw data");
-            }
+            pg_scratch_alloc(transient_mem,
+                             drawables.drawable_count
+                                 * sizeof(pg_graphics_draw_data),
+                             alignof(pg_graphics_draw_data),
+                             &renderer_data->draw_data,
+                             err);
 
             for (u32 i = 0; i < drawables.drawable_count; i += 1)
             {
                 pg_graphics_drawable* d = &drawables.drawables[i];
                 constants_cb* constants;
-                ok &= pg_scratch_alloc(transient_mem,
-                                       sizeof(constants_cb),
-                                       alignof(constants_cb),
-                                       &constants);
-                if (!ok)
-                {
-                    PG_ERROR_MAJOR("failed to get memory for constants "
-                                   "constant buffer");
-                }
+                pg_scratch_alloc(transient_mem,
+                                 sizeof(constants_cb),
+                                 alignof(constants_cb),
+                                 &constants,
+                                 err);
                 *constants
                     = (constants_cb){.vertex_offset = d->vertex_offset,
                                      .index_offset = d->index_offset,
@@ -869,9 +844,10 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     (void)show_code;
 
     pg_windows windows = {0};
-    pg_error err
-        = {.log = &pg_windows_error_log, .write_file = &pg_windows_write_file};
+    pg_error error = {.log = &pg_windows_error_log};
+    pg_error* err = &error;
 
+    pg_assets* assets = 0;
     models_metadata metadata = {0};
 
     pg_windows_init_window(&windows,
@@ -879,23 +855,19 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                            config.fixed_aspect_ratio_width,
                            config.fixed_aspect_ratio_height,
                            &app_state.fullscreen,
-                           &err);
+                           err);
     pg_windows_init_memory(&windows,
                            config.permanent_mem_size,
                            config.transient_mem_size,
-                           &err);
-    pg_assets* assets = pg_assets_read_pga(&windows.permanent_mem,
-                                           &pg_windows_read_file,
-                                           &err);
-    pg_assets_verify(assets, 0, 0, MODEL_COUNT, 0, &err);
-    static_assert(CAP(model_names) == MODEL_COUNT);
+                           err);
 
-    init_app(assets,
+    init_app(&pg_windows_file_read,
              &windows.permanent_mem,
+             &assets,
              &metadata,
              &windows.input_queue,
              &windows.gfx.renderer_data,
-             &err);
+             err);
 
     pg_windows_init_graphics(&windows,
                              config.min_gpu_mem_size,
@@ -903,8 +875,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                              app_state.vsync,
                              &app_state.gfx_api,
                              &app_state.supported_gfx_apis,
-                             &err);
-    pg_windows_init_metrics(&windows.metrics, &err);
+                             err);
+    pg_windows_init_metrics(&windows.metrics, err);
     app_state.metrics = &windows.metrics.gfx_metrics;
 
     while (windows.msg.message != WM_QUIT)
@@ -918,7 +890,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         pg_graphics_api gfx_api = app_state.gfx_api;
 
-        pg_windows_update_input(&windows, config.gamepad_count, &err);
+        pg_windows_update_input(&windows, config.gamepad_count, err);
 
         update_app(assets,
                    &windows.input_queue,
@@ -926,7 +898,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                    windows.window.render_res,
                    &windows.transient_mem,
                    &windows.gfx.renderer_data,
-                   &err);
+                   err);
         metadata.model_id_last_frame = app_state.model_id;
 
         pg_windows_update_graphics(&windows,
@@ -935,9 +907,9 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                    app_state.fullscreen,
                                    app_state.vsync,
                                    &imgui_ui,
-                                   &err);
+                                   err);
 
-        pg_windows_update_metrics(&windows.metrics, &err);
+        pg_windows_update_metrics(&windows.metrics, err);
 
         if (app_state.gfx_api != gfx_api)
         {
@@ -952,7 +924,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                        app_state.vsync,
                                        &app_state.gfx_api,
                                        &app_state.supported_gfx_apis,
-                                       &err);
+                                       err);
         }
 
         pg_scratch_free(&windows.transient_mem);
