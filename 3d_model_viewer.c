@@ -110,11 +110,13 @@ GLOBAL c8* model_names[] = {"None",
                             "PlayStation 1",
                             "Water Bottle"};
 
-GLOBAL pg_config config = {.gamepad_count = 1,
-                           .input_queue_event_count = 10,
-                           .permanent_mem_size = PG_MEBIBYTE(1024),
-                           .transient_mem_size = PG_KIBIBYTE(128),
-                           .min_gpu_mem_size = PG_MEBIBYTE(512)};
+GLOBAL pg_config config
+    = {.gamepad_count = 1,
+       .input_queue_event_count = 10,
+       .gamepad_deadzone = PG_INPUT_GAMEPAD_DEFAULT_DEADZONE,
+       .permanent_mem_size = PG_MEBIBYTE(1024),
+       .transient_mem_size = PG_KIBIBYTE(128),
+       .min_gpu_mem_size = PG_MEBIBYTE(512)};
 
 GLOBAL application_state app_state
     = {.vsync = true,
@@ -890,7 +892,10 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
         pg_graphics_api gfx_api = app_state.gfx_api;
 
-        pg_windows_update_input(&windows, config.gamepad_count, err);
+        pg_windows_update_input(&windows,
+                                config.gamepad_deadzone,
+                                config.gamepad_count,
+                                err);
 
         update_app(assets,
                    &windows.input_queue,
