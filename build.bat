@@ -90,10 +90,9 @@ if defined all (
 
     set dxc=!VULKAN_SDK!\Bin\dxc
 
-    rem -Zpr: Pack matrices in row-major
     rem -Ges: Enable strict mode
     rem -enable_unbounded_descriptor_tables: Enable use of unbounded arrays (D3D12 only)
-    set fxc_flags=-Zpr -Ges -enable_unbounded_descriptor_tables
+    set fxc_flags=-Ges -enable_unbounded_descriptor_tables
     if defined release (
         rem -O3: Enable optimizations
         rem -Qstrip_debug: Strip debug data
@@ -115,11 +114,10 @@ if defined all (
     fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D12 -E vs -T vs_5_1 -Fo !project_dir!\build\shaders\d3d12_vs.dxbc > nul
     fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D12 -E ps -T ps_5_1 -Fo !project_dir!\build\shaders\d3d12_ps.dxbc > nul
 
-    rem -Zpr: Pack matrices in row-major
     rem -Ges: Enable strict mode
     rem -spirv: Output SPIR-V
     rem -fvk-use-dx-layout: Use DirectX packing rules for uniform and storage buffers
-    set dxc_flags=-Zpr -Ges -spirv -fvk-use-dx-layout
+    set dxc_flags=-Ges -spirv -fvk-use-dx-layout
     if defined release (
         rem -O3: Enable optimizations
         rem -Qstrip_debug: Strip debug data
@@ -138,8 +136,8 @@ if defined all (
     rem -T: Set shader target profile
     rem -Fo: Set output file path
     rem -vkbr a b c d: Assign HLSL register (a) in space (b) to binding (c) in descriptor set (d)
-    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DVULKAN -E vs -T vs_6_0 -Fo !project_dir!\build\shaders\vulkan_vs.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
-    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DVULKAN -E ps -T ps_6_0 -Fo !project_dir!\build\shaders\vulkan_ps.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 1 5 0
+    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DVULKAN -E vs -T vs_6_0 -Fo !project_dir!\build\shaders\vulkan_vs.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr t6 1 6 0
+    !dxc! !project_dir!\shaders.hlsl !dxc_flags! -DVULKAN -E ps -T ps_6_0 -Fo !project_dir!\build\shaders\vulkan_ps.spv -vkbr s0 0 0 0 -vkbr b1 0 1 0 -vkbr t2 0 2 0 -vkbr t3 0 3 0 -vkbr t4 0 4 0 -vkbr t5 0 5 0 -vkbr t6 1 6 0
 
     rem Asset Compilation
     pushd !project_dir!\
