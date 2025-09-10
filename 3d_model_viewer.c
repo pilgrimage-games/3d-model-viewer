@@ -21,8 +21,10 @@ typedef enum
 typedef enum
 {
     INPUT_ACTION_TYPE_NONE,
-    INPUT_ACTION_TYPE_NEXT,
-    INPUT_ACTION_TYPE_PREVIOUS,
+    INPUT_ACTION_TYPE_NEXT_MODEL,
+    INPUT_ACTION_TYPE_PREVIOUS_MODEL,
+    INPUT_ACTION_TYPE_NEXT_ANIMATION,
+    INPUT_ACTION_TYPE_PREVIOUS_ANIMATION,
     INPUT_ACTION_TYPE_ROTATE,
     INPUT_ACTION_TYPE_ZOOM_IN,
     INPUT_ACTION_TYPE_ZOOM_OUT,
@@ -334,7 +336,7 @@ init_app(pg_file_read_fp pg_file_read,
             case PG_GAMEPAD_RIGHT:
             {
                 at->repeat_rate = PG_MILLISECOND(1.0f / 2.0f);
-                at->type = INPUT_ACTION_TYPE_NEXT;
+                at->type = INPUT_ACTION_TYPE_NEXT_MODEL;
                 break;
             }
             case PG_KEYBOARD_W:
@@ -345,7 +347,19 @@ init_app(pg_file_read_fp pg_file_read,
             case PG_GAMEPAD_LEFT:
             {
                 at->repeat_rate = PG_MILLISECOND(1.0f / 2.0f);
-                at->type = INPUT_ACTION_TYPE_PREVIOUS;
+                at->type = INPUT_ACTION_TYPE_PREVIOUS_MODEL;
+                break;
+            }
+            case PG_KEYBOARD_E:
+            case PG_GAMEPAD_RB:
+            {
+                at->type = INPUT_ACTION_TYPE_NEXT_ANIMATION;
+                break;
+            }
+            case PG_KEYBOARD_Q:
+            case PG_GAMEPAD_LB:
+            {
+                at->type = INPUT_ACTION_TYPE_PREVIOUS_ANIMATION;
                 break;
             }
             case PG_MOUSE_MOVED:
@@ -431,7 +445,7 @@ process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
 
     switch (at)
     {
-        case INPUT_ACTION_TYPE_NEXT:
+        case INPUT_ACTION_TYPE_NEXT_MODEL:
         {
             app_state.model_id = (app_state.model_id == MODEL_COUNT - 1)
                                      ? 1
@@ -439,12 +453,38 @@ process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
             reset_view();
             break;
         }
-        case INPUT_ACTION_TYPE_PREVIOUS:
+        case INPUT_ACTION_TYPE_PREVIOUS_MODEL:
         {
             app_state.model_id = (app_state.model_id == 1)
                                      ? MODEL_COUNT - 1
                                      : app_state.model_id - 1;
             reset_view();
+            break;
+        }
+        case INPUT_ACTION_TYPE_NEXT_ANIMATION:
+        {
+            u32 animation_count
+                = assets->models[app_state.model_id].animation_count;
+            if (animation_count)
+            {
+                app_state.animation.id
+                    = (app_state.animation.id + 1) % animation_count;
+            }
+            break;
+        }
+        case INPUT_ACTION_TYPE_PREVIOUS_ANIMATION:
+        {
+            u32 animation_count
+                = assets->models[app_state.model_id].animation_count;
+            if (animation_count)
+            {
+                if (app_state.animation.id == 0)
+                {
+                    app_state.animation.id += animation_count;
+                }
+                app_state.animation.id
+                    = (app_state.animation.id - 1) % animation_count;
+            }
             break;
         }
         case INPUT_ACTION_TYPE_ROTATE:
