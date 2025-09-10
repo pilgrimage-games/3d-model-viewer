@@ -90,7 +90,6 @@ typedef enum
     MODEL_NONE,
     MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT,
     MODEL_BOX_ANIMATED,
-    MODEL_CESIUM_MAN,
     MODEL_CORSET,
     MODEL_DAMAGED_HELMET,
     MODEL_FOX,
@@ -104,7 +103,6 @@ typedef enum
 GLOBAL c8* model_names[] = {"None",
                             "Abstract Rainbow Translucent Pendant",
                             "Box Animated",
-                            "Cesium Man",
                             "Corset",
                             "Damaged Helmet",
                             "Fox",
@@ -124,7 +122,7 @@ GLOBAL pg_config config
 GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
-       .model_id = MODEL_FOX,
+       .model_id = MODEL_DAMAGED_HELMET,
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}}};
 
 GLOBAL pg_assets* assets = 0;
@@ -148,10 +146,6 @@ reset_view(void)
     {
         app_state.scaling = pg_f32_3x_pack(0.45f);
         app_state.camera.position.y = PG_PI / 4.0f;
-    }
-    else if (app_state.model_id == MODEL_CESIUM_MAN)
-    {
-        app_state.scaling = pg_f32_3x_pack(0.5f);
     }
     else if (app_state.model_id == MODEL_CORSET)
     {
