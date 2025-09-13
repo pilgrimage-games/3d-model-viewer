@@ -151,6 +151,10 @@ reset_view(void)
         app_state.scaling = pg_f32_3x_pack(0.45f);
         app_state.camera.position.y = PG_PI / 4.0f;
     }
+    else if (app_state.model_id == MODEL_BRAINSTEM)
+    {
+        app_state.translation.y = -1.0f;
+    }
     else if (app_state.model_id == MODEL_CORSET)
     {
         app_state.scaling = pg_f32_3x_pack(35.0f);
@@ -162,7 +166,9 @@ reset_view(void)
     }
     else if (app_state.model_id == MODEL_FOX)
     {
-        app_state.scaling = pg_f32_3x_pack(0.01f);
+        app_state.scaling = pg_f32_3x_pack(0.015f);
+        app_state.rotation.y = 22.5f;
+        app_state.translation.y = -1.0f;
     }
     else if (app_state.model_id == MODEL_FTM)
     {
@@ -178,7 +184,8 @@ reset_view(void)
     }
     else if (app_state.model_id == MODEL_VIRTUAL_CITY)
     {
-        app_state.scaling = pg_f32_3x_pack(0.1f);
+        app_state.scaling = pg_f32_3x_pack(0.075f);
+        app_state.camera.position.y = PG_PI / 3.0f;
     }
     else if (app_state.model_id == MODEL_WATER_BOTTLE)
     {
