@@ -92,12 +92,13 @@ typedef enum
     MODEL_NONE,
     MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT,
     MODEL_BOX_ANIMATED,
+    MODEL_BRAINSTEM,
     MODEL_CORSET,
     MODEL_DAMAGED_HELMET,
     MODEL_FOX,
     MODEL_FTM,
-    MODEL_METAL_ROUGH_SPHERES,
     MODEL_PLAYSTATION_1,
+    MODEL_VIRTUAL_CITY,
     MODEL_WATER_BOTTLE,
     MODEL_COUNT
 } asset_type_model;
@@ -105,12 +106,13 @@ typedef enum
 GLOBAL c8* model_names[] = {"None",
                             "Abstract Rainbow Translucent Pendant",
                             "Box Animated",
+                            "Brainstem",
                             "Corset",
                             "Damaged Helmet",
                             "Fox",
                             "Ftm",
-                            "Metal-Rough Spheres",
                             "PlayStation 1",
+                            "Virtual City",
                             "Water Bottle"};
 
 GLOBAL pg_config config
@@ -118,7 +120,7 @@ GLOBAL pg_config config
        .input_queue_event_count = 10,
        .gamepad_deadzone = PG_INPUT_GAMEPAD_DEFAULT_DEADZONE,
        .permanent_mem_size = PG_MEBIBYTE(1024),
-       .transient_mem_size = PG_KIBIBYTE(128),
+       .transient_mem_size = PG_KIBIBYTE(256),
        .min_gpu_mem_size = PG_MEBIBYTE(512)};
 
 GLOBAL application_state app_state
@@ -168,15 +170,15 @@ reset_view(void)
         app_state.rotation.y = 135.0f;
         app_state.camera.position.y = PG_PI / 2.5f;
     }
-    else if (app_state.model_id == MODEL_METAL_ROUGH_SPHERES)
-    {
-        app_state.scaling = pg_f32_3x_pack(0.2f);
-    }
     else if (app_state.model_id == MODEL_PLAYSTATION_1)
     {
         app_state.scaling = pg_f32_3x_pack(0.5f);
         app_state.rotation.x = 120.0f;
         app_state.rotation.z = 270.0f;
+    }
+    else if (app_state.model_id == MODEL_VIRTUAL_CITY)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.1f);
     }
     else if (app_state.model_id == MODEL_WATER_BOTTLE)
     {
@@ -221,16 +223,18 @@ imgui_ui(void)
                                      ImGuiTreeNodeFlags_DefaultOpen);
         if (animation_selection_active)
         {
-            // TODO: Use animation names from glTF?
-            // NOTE: The c8 operation below only works for single digit
-            // animation counts (starting at 1).
-            assert(assets->models[model_id].animation_count < 9);
+            // NOTE: This simple UI string expects animation counts to not
+            // exceed single digits.
+            assert(assets->models[model_id].animation_count <= 9);
 
-            for (u32 i = 0; i < assets->models[model_id].animation_count;
+            c8* animation_name = "Animation _";
+            for (u32 i = 1; i <= assets->models[model_id].animation_count;
                  i += 1)
             {
-                c8 i_s = (c8)((u32)'1' + i);
-                ImGui_RadioButtonIntPtr(&i_s, (s32*)&app_state.animation.id, i);
+                animation_name[10] = (c8)((u32)'0' + i);
+                ImGui_RadioButtonIntPtr(animation_name,
+                                        (s32*)&app_state.animation.id,
+                                        i - 1);
             }
         }
     }

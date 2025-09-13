@@ -21,8 +21,8 @@ download and run the application.
 ## Features
 * Physically-based rendering (PBR) with support for base color,
 metallic-roughness, normal, and emissive textures
-* Non-opaque material support (i.e. translucency sorting)
-* Animation support
+* Support for non-opaque materials (via translucency sorting)
+* Support for animation, including skeletal animation (via mesh skinning)
 * Custom renderers for all modern PC graphics APIs (Direct3D 11, Direct3D 12,
 and Vulkan)
 * Bindless rendering and custom texture cache (Direct3D 12/Vulkan)
@@ -39,12 +39,13 @@ The included 3D models are processed from their original glTF 2.0 binary format
 
 ### Attributions
 * "Abstract Rainbow Translucent Pendant" by riach is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-* "Baker and the Bridge" by Conrad Justin is licensed under [Sketchfab Standard](https://sketchfab.com/licenses).
 * "Box Animated" by Cesium is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+* "Brainstem" by Keith Hunter is licensed under [Poser End User License Agreement](https://www.posersoftware.com/documentation/12/Poser_Reference_Manual/Introduction/Installing/Poser_End_User_License_Agreement_(EULA).htm).
 * "Corset" by Microsoft is Public Domain.
-* "Damaged Helmet" by theblueturtle_ is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+* "Damaged Helmet" by theblueturtle_ (model) and ctxwing (rebuild and conversion to glTF) is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) and [CC BY 4.0 International](https://creativecommons.org/licenses/by/4.0/) respectively.
+* "Fox" by PixelMannen (model), tomkranis (rigging and animation), and AsoboStudio and scurest (conversion to glTF) is licensed under [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/), [CC BY 4.0 International](https://creativecommons.org/licenses/by/4.0/), and [CC BY 4.0 International](https://creativecommons.org/licenses/by/4.0/) respectively.
 * "Ftm" by luyssport is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
-* "Metal-Rough Spheres" by Ed Mackey is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 * "PlayStation 1" by Lars Maes is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+* "Virtual City" by 3DRT is licensed under [3DRT License](https://3drt.com/store/terms-of-use-license.html).
 * "Water Bottle" by Microsoft is Public Domain.
 
