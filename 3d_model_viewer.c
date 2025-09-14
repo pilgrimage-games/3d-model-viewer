@@ -476,26 +476,19 @@ process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
         {
             u32 animation_count
                 = assets->models[app_state.model_id].animation_count;
-            if (animation_count)
-            {
-                app_state.animation.id
-                    = (app_state.animation.id + 1) % animation_count;
-            }
+            app_state.animation.id
+                = (app_state.animation.id == animation_count - 1)
+                      ? 0
+                      : app_state.animation.id + 1;
             break;
         }
         case INPUT_ACTION_TYPE_PREVIOUS_ANIMATION:
         {
             u32 animation_count
                 = assets->models[app_state.model_id].animation_count;
-            if (animation_count)
-            {
-                if (app_state.animation.id == 0)
-                {
-                    app_state.animation.id += animation_count;
-                }
-                app_state.animation.id
-                    = (app_state.animation.id - 1) % animation_count;
-            }
+            app_state.animation.id = (app_state.animation.id == 0)
+                                         ? animation_count - 1
+                                         : app_state.animation.id - 1;
             break;
         }
         case INPUT_ACTION_TYPE_ROTATE:
