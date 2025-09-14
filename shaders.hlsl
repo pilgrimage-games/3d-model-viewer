@@ -35,7 +35,7 @@ struct vertex
     float2 tex_coord;
     float4 color;
     uint4 joint_ids;
-    float4 weights;
+    float4 joint_weights;
 };
 
 struct material_properties
@@ -87,52 +87,38 @@ vs(uint index_id : SV_VertexID)
     uint vertex_id = indices_sb[per_draw_cb.index_offset + index_id];
     vertex v = vertices_sb[per_draw_cb.vertex_offset + vertex_id];
 
-    float4 position = float4(0.0f, 0.0f, 0.0f, 1.0f);
-    float total_weight = 0.0f;
+    float joint_weight_sum = 0.0f;
+    float4x4 skin_transform = 0.0f;
     for (uint i = 0; i < 4; i += 1)
     {
-        total_weight += v.weights[i];
+        skin_transform
+            += v.joint_weights[i] * joint_transforms_sb[v.joint_ids[i]];
+        joint_weight_sum += v.joint_weights[i];
     }
-    if (total_weight == 0.0f)
-    {
-        position = mul(per_draw_cb.global_transform, float4(v.position, 1.0f));
-    }
-    else
-    {
-        float4x4 skin_transform = 0.0f;
-        for (uint i = 0; i < 4; i += 1)
-        {
-            skin_transform
-                += v.weights[i] * joint_transforms_sb[v.joint_ids[i]];
-        }
-        position = mul(skin_transform, float4(v.position, 1.0f));
-    }
+    float4x4 world_from_model
+        = mul(per_frame_cb.world_from_model,
+              joint_weight_sum > 0.0f ? skin_transform
+                                      : per_draw_cb.global_transform);
 
     // NOTE: When multiplying the global transform, the w component must be
     // 1.0f for position vectors and 0.0f for direction vectors.
     pixel p;
     p.position = mul(per_frame_cb.clip_from_world,
-                     mul(per_frame_cb.world_from_model, position));
+                     mul(world_from_model, float4(v.position, 1.0f)));
 
     // NOTE: Translation is ignored by casting to a 3x3 matrix.
     // NOTE: This assumes uniform scaling. For non-uniform scaling, use the
     // inverse transpose to undo the model matrix's scale transform but
     // preserve its rotation.
-    p.normal = normalize(
-        mul((float3x3)per_frame_cb.world_from_model,
-            mul(per_draw_cb.global_transform, float4(v.normal, 0.0f)).xyz));
-    p.tangent = normalize(mul(
-        (float3x3)per_frame_cb.world_from_model,
-        mul(per_draw_cb.global_transform, float4(v.tangent.xyz, 0.0f)).xyz));
+    p.normal = normalize(mul((float3x3)world_from_model, v.normal));
+    p.tangent = normalize(mul((float3x3)world_from_model, v.tangent.xyz));
 
     // Reorthogonalize tangent with respect to normal using Gram-Schmidt.
     p.tangent = normalize(p.tangent - (dot(p.tangent, p.normal) * p.normal));
 
-    p.bitangent = normalize(mul(cross(p.normal, p.tangent), v.tangent.w));
+    p.bitangent = normalize(cross(p.normal, p.tangent) * v.tangent.w);
 
-    p.view_dir = (float3)mul(per_frame_cb.world_from_model,
-                             mul(per_draw_cb.global_transform,
-                                 float4(v.position, 1.0f)))
+    p.view_dir = mul(world_from_model, float4(v.position, 1.0f)).xyz
                  - per_frame_cb.camera_pos;
 
     p.tex_coord = v.tex_coord;
