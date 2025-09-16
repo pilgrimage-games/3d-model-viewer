@@ -34,6 +34,8 @@ struct vertex
     float4 tangent;
     float2 tex_coord;
     float4 color;
+    uint4 joint_ids;
+    float4 joint_weights;
 };
 
 struct material_properties
@@ -62,56 +64,62 @@ struct pixel
 #if defined(VULKAN)
 [[vk::push_constant]]
 #endif
-CONSTANT_BUFFER(constants, per_draw, b0);
+CONSTANT_BUFFER(constants, per_draw_cb, b0);
 
 // Vertex Shader Resources
-CONSTANT_BUFFER(frame_data, per_frame, b1);
-StructuredBuffer<vertex> vertices : register(t2);
-StructuredBuffer<uint> indices : register(t3);
+CONSTANT_BUFFER(frame_data, per_frame_cb, b1);
+StructuredBuffer<vertex> vertices_sb : register(t2);
+StructuredBuffer<uint> indices_sb : register(t3);
+StructuredBuffer<float4x4> joint_transforms_sb : register(t4);
 
 // Pixel Shader Resources
-StructuredBuffer<material_properties> properties : register(t4);
+StructuredBuffer<material_properties> material_properties_sb : register(t5);
 #if defined(D3D12) || defined(VULKAN)
-Texture2D textures[] : TEXTURE : register(t5, space1);
+Texture2D textures[] : TEXTURE : register(t6, space1);
 #else
-Texture2D textures[4] : TEXTURE : register(t5);
+Texture2D textures[4] : TEXTURE : register(t6);
 #endif
 SamplerState ss : SAMPLER : register(s0);
 
 pixel
 vs(uint index_id : SV_VertexID)
 {
-    uint vertex_id = indices[per_draw.index_offset + index_id];
-    vertex v = vertices[per_draw.vertex_offset + vertex_id];
+    uint vertex_id = indices_sb[per_draw_cb.index_offset + index_id];
+    vertex v = vertices_sb[per_draw_cb.vertex_offset + vertex_id];
+
+    float joint_weight_sum = 0.0f;
+    float4x4 skin_transform = 0.0f;
+    for (uint i = 0; i < 4; i += 1)
+    {
+        skin_transform
+            += v.joint_weights[i] * joint_transforms_sb[v.joint_ids[i]];
+        joint_weight_sum += v.joint_weights[i];
+    }
+    float4x4 world_from_model
+        = mul(per_frame_cb.world_from_model,
+              joint_weight_sum > 0.0f ? skin_transform
+                                      : per_draw_cb.global_transform);
 
     // NOTE: When multiplying the global transform, the w component must be
     // 1.0f for position vectors and 0.0f for direction vectors.
     pixel p;
-    p.position
-        = mul(per_frame.clip_from_world,
-              mul(per_frame.world_from_model,
-                  mul(per_draw.global_transform, float4(v.position, 1.0f))));
+    p.position = mul(per_frame_cb.clip_from_world,
+                     mul(world_from_model, float4(v.position, 1.0f)));
 
     // NOTE: Translation is ignored by casting to a 3x3 matrix.
     // NOTE: This assumes uniform scaling. For non-uniform scaling, use the
     // inverse transpose to undo the model matrix's scale transform but
     // preserve its rotation.
-    p.normal = normalize(
-        mul((float3x3)per_frame.world_from_model,
-            mul(per_draw.global_transform, float4(v.normal, 0.0f)).xyz));
-    p.tangent = normalize(
-        mul((float3x3)per_frame.world_from_model,
-            mul(per_draw.global_transform, float4(v.tangent.xyz, 0.0f)).xyz));
+    p.normal = normalize(mul((float3x3)world_from_model, v.normal));
+    p.tangent = normalize(mul((float3x3)world_from_model, v.tangent.xyz));
 
     // Reorthogonalize tangent with respect to normal using Gram-Schmidt.
     p.tangent = normalize(p.tangent - (dot(p.tangent, p.normal) * p.normal));
 
-    p.bitangent = normalize(mul(cross(p.normal, p.tangent), v.tangent.w));
+    p.bitangent = normalize(cross(p.normal, p.tangent) * v.tangent.w);
 
-    p.view_dir
-        = (float3)mul(per_frame.world_from_model,
-                      mul(per_draw.global_transform, float4(v.position, 1.0f)))
-          - per_frame.camera_pos;
+    p.view_dir = mul(world_from_model, float4(v.position, 1.0f)).xyz
+                 - per_frame_cb.camera_pos;
 
     p.tex_coord = v.tex_coord;
     p.color = v.color;
@@ -241,11 +249,11 @@ float4
 ps(pixel p) :
     SV_TARGET
 {
-    material_properties mp = properties[per_draw.material_id];
+    material_properties mp = material_properties_sb[per_draw_cb.material_id];
 
     // Sample textures.
 #if defined(D3D12) || defined(VULKAN)
-    uint tex_offset = per_draw.texture_id;
+    uint tex_offset = per_draw_cb.texture_id;
 #else
     uint tex_offset = 0;
 #endif

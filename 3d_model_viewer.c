@@ -11,8 +11,9 @@ static_assert(0, "no supported platform is defined");
 typedef enum
 {
     GRAPHICS_BUFFER_PER_FRAME_CB,
-    GRAPHICS_BUFFER_VERTEX_SB,
-    GRAPHICS_BUFFER_INDEX_SB,
+    GRAPHICS_BUFFER_VERTICES_SB,
+    GRAPHICS_BUFFER_INDICES_SB,
+    GRAPHICS_BUFFER_JOINT_TRANSFORMS_SB,
     GRAPHICS_BUFFER_MATERIAL_PROPERTIES_SB,
     GRAPHICS_BUFFER_COUNT
 } graphics_buffer;
@@ -20,8 +21,10 @@ typedef enum
 typedef enum
 {
     INPUT_ACTION_TYPE_NONE,
-    INPUT_ACTION_TYPE_NEXT,
-    INPUT_ACTION_TYPE_PREVIOUS,
+    INPUT_ACTION_TYPE_NEXT_MODEL,
+    INPUT_ACTION_TYPE_PREVIOUS_MODEL,
+    INPUT_ACTION_TYPE_NEXT_ANIMATION,
+    INPUT_ACTION_TYPE_PREVIOUS_ANIMATION,
     INPUT_ACTION_TYPE_ROTATE,
     INPUT_ACTION_TYPE_ZOOM_IN,
     INPUT_ACTION_TYPE_ZOOM_OUT,
@@ -63,11 +66,11 @@ typedef struct
     b8 wireframe_mode;
     b8 auto_rotate;
     u32 model_id;
-    u32 animation_id;
-    f32 running_animation_time; // in ms
+    u32 model_animation_count;
     pg_f32_3x scaling;
     pg_f32_3x rotation;
     pg_f32_3x translation;
+    pg_animation animation;                                   // align: 4
     pg_camera camera;                                         // align: 4
     input_action input_action_map[PG_INPUT_EVENT_TYPE_COUNT]; // align: 4
     pg_graphics_api gfx_api;                                  // align: 4
@@ -80,6 +83,7 @@ typedef struct
     u32 model_id_last_frame;
     u32 max_vertex_count;
     u32 max_index_count;
+    u32 max_joint_count;
     u32 max_material_count;
     u32 total_texture_count;
 } models_metadata;
@@ -88,26 +92,28 @@ typedef enum
 {
     MODEL_NONE,
     MODEL_ABSTRACT_RAINBOW_TRANSLUCENT_PENDANT,
-    MODEL_BAKER_AND_THE_BRIDGE,
     MODEL_BOX_ANIMATED,
+    MODEL_BRAINSTEM,
     MODEL_CORSET,
     MODEL_DAMAGED_HELMET,
+    MODEL_FOX,
     MODEL_FTM,
-    MODEL_METAL_ROUGH_SPHERES,
     MODEL_PLAYSTATION_1,
+    MODEL_VIRTUAL_CITY,
     MODEL_WATER_BOTTLE,
     MODEL_COUNT
 } asset_type_model;
 
 GLOBAL c8* model_names[] = {"None",
                             "Abstract Rainbow Translucent Pendant",
-                            "Baker and the Bridge",
                             "Box Animated",
+                            "Brainstem",
                             "Corset",
                             "Damaged Helmet",
+                            "Fox",
                             "Ftm",
-                            "Metal-Rough Spheres",
                             "PlayStation 1",
+                            "Virtual City",
                             "Water Bottle"};
 
 GLOBAL pg_config config
@@ -115,13 +121,13 @@ GLOBAL pg_config config
        .input_queue_event_count = 10,
        .gamepad_deadzone = PG_INPUT_GAMEPAD_DEFAULT_DEADZONE,
        .permanent_mem_size = PG_MEBIBYTE(1024),
-       .transient_mem_size = PG_KIBIBYTE(128),
+       .transient_mem_size = PG_KIBIBYTE(256),
        .min_gpu_mem_size = PG_MEBIBYTE(512)};
 
 GLOBAL application_state app_state
     = {.vsync = true,
        .auto_rotate = true,
-       .model_id = MODEL_FTM,
+       .model_id = MODEL_DAMAGED_HELMET,
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}}};
 
 FUNCTION void
@@ -131,6 +137,7 @@ reset_view(void)
     app_state.scaling = (pg_f32_3x){0};
     app_state.rotation = (pg_f32_3x){0};
     app_state.translation = (pg_f32_3x){0};
+    app_state.animation = (pg_animation){0};
     app_state.camera.position
         = (pg_f32_3x){.x = PG_PI / 2.0f, .y = PG_PI / 2.0f, .z = 6.0f};
 
@@ -138,15 +145,14 @@ reset_view(void)
     {
         app_state.scaling = pg_f32_3x_pack(0.8f);
     }
-    else if (app_state.model_id == MODEL_BAKER_AND_THE_BRIDGE)
-    {
-        app_state.scaling = pg_f32_3x_pack(0.06f);
-        app_state.camera.position.y = PG_PI / 3.0f;
-    }
     else if (app_state.model_id == MODEL_BOX_ANIMATED)
     {
         app_state.scaling = pg_f32_3x_pack(0.45f);
         app_state.camera.position.y = PG_PI / 4.0f;
+    }
+    else if (app_state.model_id == MODEL_BRAINSTEM)
+    {
+        app_state.translation.y = -1.0f;
     }
     else if (app_state.model_id == MODEL_CORSET)
     {
@@ -157,21 +163,28 @@ reset_view(void)
     {
         app_state.scaling = pg_f32_3x_pack(1.125f);
     }
+    else if (app_state.model_id == MODEL_FOX)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.015f);
+        app_state.rotation.y = 22.5f;
+        app_state.translation.y = -1.0f;
+    }
     else if (app_state.model_id == MODEL_FTM)
     {
         app_state.scaling = pg_f32_3x_pack(0.13f);
         app_state.rotation.y = 135.0f;
         app_state.camera.position.y = PG_PI / 2.5f;
     }
-    else if (app_state.model_id == MODEL_METAL_ROUGH_SPHERES)
-    {
-        app_state.scaling = pg_f32_3x_pack(0.2f);
-    }
     else if (app_state.model_id == MODEL_PLAYSTATION_1)
     {
         app_state.scaling = pg_f32_3x_pack(0.5f);
         app_state.rotation.x = 120.0f;
         app_state.rotation.z = 270.0f;
+    }
+    else if (app_state.model_id == MODEL_VIRTUAL_CITY)
+    {
+        app_state.scaling = pg_f32_3x_pack(0.075f);
+        app_state.camera.position.y = PG_PI / 3.0f;
     }
     else if (app_state.model_id == MODEL_WATER_BOTTLE)
     {
@@ -191,12 +204,12 @@ imgui_ui(void)
                              &app_state.vsync,
                              &app_state.wireframe_mode);
 
+    u32 model_id = app_state.model_id;
+
     b8 model_selection_active
         = ImGui_CollapsingHeader("Models", ImGuiTreeNodeFlags_DefaultOpen);
     if (model_selection_active)
     {
-        ImGui_SeparatorText("Model Selection");
-        u32 model_id = app_state.model_id;
         for (asset_type_model i = 1; i < MODEL_COUNT; i += 1)
         {
             ImGui_RadioButtonIntPtr(model_names[i],
@@ -206,6 +219,28 @@ imgui_ui(void)
         if (app_state.model_id != model_id)
         {
             reset_view();
+        }
+    }
+
+    if (app_state.model_animation_count)
+    {
+        b8 animation_selection_active
+            = ImGui_CollapsingHeader("Animations",
+                                     ImGuiTreeNodeFlags_DefaultOpen);
+        if (animation_selection_active)
+        {
+            // NOTE: This simple UI string expects animation counts to not
+            // exceed single digits.
+            assert(app_state.model_animation_count <= 9);
+
+            c8* animation_name = "Animation _";
+            for (u32 i = 1; i <= app_state.model_animation_count; i += 1)
+            {
+                animation_name[10] = (c8)((u32)'0' + i);
+                ImGui_RadioButtonIntPtr(animation_name,
+                                        (s32*)&app_state.animation.id,
+                                        i - 1);
+            }
         }
     }
 
@@ -223,8 +258,10 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (keyboard_controls_active)
     {
-        ImGui_Text("[W/A/Left/Up]: Previous Model");
         ImGui_Text("[D/S/Right/Down]: Next Model");
+        ImGui_Text("[W/A/Left/Up]: Previous Model");
+        ImGui_Text("[E]: Next Animation");
+        ImGui_Text("[Q]: Previous Animation");
         ImGui_Text("[Alt+Enter]: Toggle Fullscreen");
     }
 
@@ -233,8 +270,10 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (gamepad_controls_active)
     {
-        ImGui_Text("[D-Pad Left/Up]: Previous Model");
-        ImGui_Text("[D-Pad Right/Down]: Next Model");
+        ImGui_Text("[Right/Down]: Next Model");
+        ImGui_Text("[Left/Up]: Previous Model");
+        ImGui_Text("[Right Bumper]: Next Animation");
+        ImGui_Text("[Left Bumper]: Previous Animation");
         ImGui_Text("[Left/Right Stick]: Rotate");
         ImGui_Text("[Right Trigger/Left Trigger]: Zoom In/Zoom Out");
     }
@@ -273,6 +312,11 @@ init_app(pg_file_read_fp pg_file_read,
             metadata->max_index_count = model->index_count;
         }
 
+        if (model->joint_count > metadata->max_joint_count)
+        {
+            metadata->max_joint_count = model->joint_count;
+        }
+
         if (model->material_count > metadata->max_material_count)
         {
             metadata->max_material_count = model->material_count;
@@ -306,7 +350,7 @@ init_app(pg_file_read_fp pg_file_read,
             case PG_GAMEPAD_RIGHT:
             {
                 at->repeat_rate = PG_MILLISECOND(1.0f / 2.0f);
-                at->type = INPUT_ACTION_TYPE_NEXT;
+                at->type = INPUT_ACTION_TYPE_NEXT_MODEL;
                 break;
             }
             case PG_KEYBOARD_W:
@@ -317,7 +361,19 @@ init_app(pg_file_read_fp pg_file_read,
             case PG_GAMEPAD_LEFT:
             {
                 at->repeat_rate = PG_MILLISECOND(1.0f / 2.0f);
-                at->type = INPUT_ACTION_TYPE_PREVIOUS;
+                at->type = INPUT_ACTION_TYPE_PREVIOUS_MODEL;
+                break;
+            }
+            case PG_KEYBOARD_E:
+            case PG_GAMEPAD_RB:
+            {
+                at->type = INPUT_ACTION_TYPE_NEXT_ANIMATION;
+                break;
+            }
+            case PG_KEYBOARD_Q:
+            case PG_GAMEPAD_LB:
+            {
+                at->type = INPUT_ACTION_TYPE_PREVIOUS_ANIMATION;
                 break;
             }
             case PG_MOUSE_MOVED:
@@ -352,14 +408,18 @@ init_app(pg_file_read_fp pg_file_read,
                 .shader_stage = PG_SHADER_STAGE_VERTEX,
                 .max_elem_count = 1,
                 .elem_size = sizeof(per_frame_cb)},
-               {.id = GRAPHICS_BUFFER_VERTEX_SB,
+               {.id = GRAPHICS_BUFFER_VERTICES_SB,
                 .shader_stage = PG_SHADER_STAGE_VERTEX,
                 .max_elem_count = metadata->max_vertex_count,
                 .elem_size = sizeof(pg_vertex)},
-               {.id = GRAPHICS_BUFFER_INDEX_SB,
+               {.id = GRAPHICS_BUFFER_INDICES_SB,
                 .shader_stage = PG_SHADER_STAGE_VERTEX,
                 .max_elem_count = metadata->max_index_count,
                 .elem_size = sizeof(PG_GRAPHICS_INDEX_TYPE)},
+               {.id = GRAPHICS_BUFFER_JOINT_TRANSFORMS_SB,
+                .shader_stage = PG_SHADER_STAGE_VERTEX,
+                .max_elem_count = metadata->max_joint_count,
+                .elem_size = sizeof(pg_f32_4x4)},
                {.id = GRAPHICS_BUFFER_MATERIAL_PROPERTIES_SB,
                 .shader_stage = PG_SHADER_STAGE_PIXEL,
                 .max_elem_count = metadata->max_material_count,
@@ -399,7 +459,7 @@ process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
 
     switch (at)
     {
-        case INPUT_ACTION_TYPE_NEXT:
+        case INPUT_ACTION_TYPE_NEXT_MODEL:
         {
             app_state.model_id = (app_state.model_id == MODEL_COUNT - 1)
                                      ? 1
@@ -407,12 +467,27 @@ process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
             reset_view();
             break;
         }
-        case INPUT_ACTION_TYPE_PREVIOUS:
+        case INPUT_ACTION_TYPE_PREVIOUS_MODEL:
         {
             app_state.model_id = (app_state.model_id == 1)
                                      ? MODEL_COUNT - 1
                                      : app_state.model_id - 1;
             reset_view();
+            break;
+        }
+        case INPUT_ACTION_TYPE_NEXT_ANIMATION:
+        {
+            app_state.animation.id = (app_state.animation.id
+                                      == app_state.model_animation_count - 1)
+                                         ? 0
+                                         : app_state.animation.id + 1;
+            break;
+        }
+        case INPUT_ACTION_TYPE_PREVIOUS_ANIMATION:
+        {
+            app_state.animation.id = (app_state.animation.id == 0)
+                                         ? app_state.model_animation_count - 1
+                                         : app_state.animation.id - 1;
             break;
         }
         case INPUT_ACTION_TYPE_ROTATE:
@@ -564,10 +639,12 @@ update_app(pg_assets* assets,
         }
     }
 
-    pg_asset_model* curr_model = &assets->models[app_state.model_id];
+    pg_asset_model* model = &assets->models[app_state.model_id];
 
     // Animate.
     {
+        app_state.model_animation_count = model->animation_count;
+
         if (app_state.auto_rotate)
         {
             f32 auto_rotation_rate = 30.0f; // degrees/sec
@@ -584,60 +661,58 @@ update_app(pg_assets* assets,
 
         if (app_state.model_id != metadata->model_id_last_frame)
         {
-            app_state.running_animation_time = 0.0f;
+            app_state.animation.time = 0.0f;
         }
 
-        if (app_state.animation_id < curr_model->animation_count)
+        if (app_state.animation.id < model->animation_count)
         {
-            app_state.running_animation_time += frame_time;
+            app_state.animation.time += frame_time;
 
             // Loop the animation.
-            if (app_state.running_animation_time
-                > curr_model->animations[app_state.animation_id]
-                      .total_animation_time)
+            if (app_state.animation.time
+                > model->animations[app_state.animation.id].duration)
             {
-                app_state.running_animation_time
-                    -= curr_model->animations[app_state.animation_id]
-                           .total_animation_time;
+                app_state.animation.time
+                    -= model->animations[app_state.animation.id].duration;
             }
         }
     }
 
     // Generate matrices.
-    pg_f32_3x camera_position
-        = pg_camera_get_cartesian_position(&app_state.camera);
     pg_f32_4x4 world_from_model = pg_f32_4x4_world_from_model(
         app_state.scaling,
         pg_f32_4x_euler_to_quaternion(app_state.rotation),
         app_state.translation);
-    pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
-        27.0f,
-        render_res.width / render_res.height,
-        0.01f,
-        16.0f);
+    pg_f32_3x camera_position
+        = pg_camera_get_cartesian_position(&app_state.camera);
     pg_f32_4x4 view_from_world
         = pg_f32_4x4_view_from_world(camera_position,
                                      app_state.camera.focal_point,
                                      app_state.camera.up_axis);
     pg_f32_4x4 view_from_model
         = pg_f32_4x4_mul(view_from_world, world_from_model);
+    pg_f32_4x4 clip_from_view = pg_f32_4x4_clip_from_view_perspective(
+        27.0f,
+        render_res.width / render_res.height,
+        0.01f,
+        16.0f);
 
     // Get drawables.
+    pg_f32_4x4* joint_transforms = 0;
     pg_graphics_drawables drawables = {0};
     {
-        pg_asset_model models[] = {*curr_model};
+        pg_asset_model models[] = {*model};
         u32 model_ids[] = {app_state.model_id};
-        u32 animation_ids[] = {app_state.animation_id};
-        f32 running_animation_times[] = {app_state.running_animation_time};
-        pg_asset_model_get_drawables(models,
-                                     model_ids,
-                                     animation_ids,
-                                     running_animation_times,
-                                     CAP(models),
-                                     &view_from_model,
-                                     transient_mem,
-                                     &drawables,
-                                     err);
+        pg_animation animations[] = {app_state.animation};
+        pg_assets_get_3d_drawables(assets,
+                                   model_ids,
+                                   animations,
+                                   CAP(models),
+                                   &view_from_model,
+                                   transient_mem,
+                                   &joint_transforms,
+                                   &drawables,
+                                   err);
     }
 
     // Update renderer data.
@@ -664,43 +739,46 @@ update_app(pg_assets* assets,
                 renderer_data->buffer_data[gb].elem_count = 1;
                 renderer_data->buffer_data[gb].buffer = per_frame;
             }
-            else if (gb == GRAPHICS_BUFFER_VERTEX_SB)
+            else if (gb == GRAPHICS_BUFFER_VERTICES_SB)
             {
                 if (app_state.model_id != metadata->model_id_last_frame)
                 {
                     renderer_data->buffer_data[gb].elem_count
-                        = curr_model->vertex_count;
-                    renderer_data->buffer_data[gb].buffer
-                        = curr_model->vertices;
+                        = model->vertex_count;
+                    renderer_data->buffer_data[gb].buffer = model->vertices;
                 }
             }
-            else if (gb == GRAPHICS_BUFFER_INDEX_SB)
+            else if (gb == GRAPHICS_BUFFER_INDICES_SB)
             {
                 if (app_state.model_id != metadata->model_id_last_frame)
                 {
                     renderer_data->buffer_data[gb].elem_count
-                        = curr_model->index_count;
-                    renderer_data->buffer_data[gb].buffer = curr_model->indices;
+                        = model->index_count;
+                    renderer_data->buffer_data[gb].buffer = model->indices;
                 }
+            }
+            else if (gb == GRAPHICS_BUFFER_JOINT_TRANSFORMS_SB)
+            {
+                renderer_data->buffer_data[gb].elem_count = model->joint_count;
+                renderer_data->buffer_data[gb].buffer = joint_transforms;
             }
             else if (gb == GRAPHICS_BUFFER_MATERIAL_PROPERTIES_SB)
             {
                 pg_asset_material_properties* material_properties;
                 pg_scratch_alloc(transient_mem,
-                                 curr_model->material_count
+                                 model->material_count
                                      * sizeof(pg_asset_material_properties),
                                  alignof(pg_asset_material_properties),
                                  &material_properties,
                                  err);
 
-                for (u32 i = 0; i < curr_model->material_count; i += 1)
+                for (u32 i = 0; i < model->material_count; i += 1)
                 {
-                    material_properties[i]
-                        = curr_model->materials[i].properties;
+                    material_properties[i] = model->materials[i].properties;
                 }
 
                 renderer_data->buffer_data[gb].elem_count
-                    = curr_model->material_count;
+                    = model->material_count;
                 renderer_data->buffer_data[gb].buffer = material_properties;
             }
         }
@@ -745,10 +823,10 @@ update_app(pg_assets* assets,
                         }
                     }
 
-                    pg_asset_model* model = &assets->models[model_id];
-                    for (u32 j = 0; j < model->material_count; j += 1)
+                    pg_asset_model* m = &assets->models[model_id];
+                    for (u32 j = 0; j < m->material_count; j += 1)
                     {
-                        for (u32 k = 0; k < model->materials[j].texture_count;
+                        for (u32 k = 0; k < m->materials[j].texture_count;
                              k += 1)
                         {
                             renderer_data
@@ -756,13 +834,12 @@ update_app(pg_assets* assets,
                                                + optional_texture_count]
                                 = (pg_graphics_texture_data){
                                     .id = (u32)pg_3d_to_1d_index(
-                                        model->materials[j].textures[k].type,
+                                        m->materials[j].textures[k].type,
                                         j,
                                         model_id,
                                         PG_TEXTURE_TYPE_COUNT,
                                         metadata->max_material_count),
-                                    .texture
-                                    = &(model->materials[j].textures[k])};
+                                    .texture = &(m->materials[j].textures[k])};
 
                             if (i == 0)
                             {
