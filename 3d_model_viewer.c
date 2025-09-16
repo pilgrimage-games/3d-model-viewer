@@ -66,6 +66,7 @@ typedef struct
     b8 wireframe_mode;
     b8 auto_rotate;
     u32 model_id;
+    u32 model_animation_count;
     pg_f32_3x scaling;
     pg_f32_3x rotation;
     pg_f32_3x translation;
@@ -128,8 +129,6 @@ GLOBAL application_state app_state
        .auto_rotate = true,
        .model_id = MODEL_DAMAGED_HELMET,
        .camera = {.arcball = true, .up_axis = {.y = 1.0f}}};
-
-GLOBAL pg_assets* assets = 0;
 
 FUNCTION void
 reset_view(void)
@@ -223,7 +222,7 @@ imgui_ui(void)
         }
     }
 
-    if (assets->models[model_id].animation_count)
+    if (app_state.model_animation_count)
     {
         b8 animation_selection_active
             = ImGui_CollapsingHeader("Animations",
@@ -232,11 +231,10 @@ imgui_ui(void)
         {
             // NOTE: This simple UI string expects animation counts to not
             // exceed single digits.
-            assert(assets->models[model_id].animation_count <= 9);
+            assert(app_state.model_animation_count <= 9);
 
             c8* animation_name = "Animation _";
-            for (u32 i = 1; i <= assets->models[model_id].animation_count;
-                 i += 1)
+            for (u32 i = 1; i <= app_state.model_animation_count; i += 1)
             {
                 animation_name[10] = (c8)((u32)'0' + i);
                 ImGui_RadioButtonIntPtr(animation_name,
@@ -260,8 +258,10 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (keyboard_controls_active)
     {
-        ImGui_Text("[W/A/Left/Up]: Previous Model");
         ImGui_Text("[D/S/Right/Down]: Next Model");
+        ImGui_Text("[W/A/Left/Up]: Previous Model");
+        ImGui_Text("[E]: Next Animation");
+        ImGui_Text("[Q]: Previous Animation");
         ImGui_Text("[Alt+Enter]: Toggle Fullscreen");
     }
 
@@ -270,8 +270,10 @@ imgui_ui(void)
                                  ImGuiTreeNodeFlags_DefaultOpen);
     if (gamepad_controls_active)
     {
-        ImGui_Text("[D-Pad Left/Up]: Previous Model");
-        ImGui_Text("[D-Pad Right/Down]: Next Model");
+        ImGui_Text("[Right/Down]: Next Model");
+        ImGui_Text("[Left/Up]: Previous Model");
+        ImGui_Text("[Right Bumper]: Next Animation");
+        ImGui_Text("[Left Bumper]: Previous Animation");
         ImGui_Text("[Left/Right Stick]: Rotate");
         ImGui_Text("[Right Trigger/Left Trigger]: Zoom In/Zoom Out");
     }
@@ -281,23 +283,24 @@ imgui_ui(void)
 FUNCTION void
 init_app(pg_file_read_fp pg_file_read,
          pg_scratch_allocator* permanent_mem,
+         pg_assets** assets,
          models_metadata* metadata,
          pg_input_queue* input_queue,
          pg_graphics_renderer_data* renderer_data,
          pg_error* err)
 {
     // Read assets file.
-    assets = pg_assets_read_pga(pg_string_create(PG_ASSET_FILE_NAME, 0, err),
-                                pg_file_read,
-                                permanent_mem,
-                                err);
-    pg_assets_verify(assets, 0, 0, 0, 0, MODEL_COUNT, err);
+    *assets = pg_assets_read_pga(pg_string_create(PG_ASSET_FILE_NAME, 0, err),
+                                 pg_file_read,
+                                 permanent_mem,
+                                 err);
+    pg_assets_verify(*assets, 0, 0, 0, 0, MODEL_COUNT, err);
     static_assert(CAP(model_names) == MODEL_COUNT);
 
     // Get models metadata.
-    for (u32 i = 0; i < (assets)->model_count; i += 1)
+    for (u32 i = 0; i < (*assets)->model_count; i += 1)
     {
-        pg_asset_model* model = &(assets)->models[i];
+        pg_asset_model* model = &(*assets)->models[i];
 
         if (model->vertex_count > metadata->max_vertex_count)
         {
@@ -429,7 +432,7 @@ init_app(pg_file_read_fp pg_file_read,
             .depth_buffer_bit_count = 32,
             .constant_count = sizeof(constants_cb) / sizeof(u32),
             .buffer_count = CAP(buffer_data),
-            .max_texture_count = assets->model_count
+            .max_texture_count = (*assets)->model_count
                                  * metadata->max_material_count
                                  * PG_TEXTURE_TYPE_COUNT};
 
@@ -474,20 +477,16 @@ process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
         }
         case INPUT_ACTION_TYPE_NEXT_ANIMATION:
         {
-            u32 animation_count
-                = assets->models[app_state.model_id].animation_count;
-            app_state.animation.id
-                = (app_state.animation.id == animation_count - 1)
-                      ? 0
-                      : app_state.animation.id + 1;
+            app_state.animation.id = (app_state.animation.id
+                                      == app_state.model_animation_count - 1)
+                                         ? 0
+                                         : app_state.animation.id + 1;
             break;
         }
         case INPUT_ACTION_TYPE_PREVIOUS_ANIMATION:
         {
-            u32 animation_count
-                = assets->models[app_state.model_id].animation_count;
             app_state.animation.id = (app_state.animation.id == 0)
-                                         ? animation_count - 1
+                                         ? app_state.model_animation_count - 1
                                          : app_state.animation.id - 1;
             break;
         }
@@ -537,7 +536,8 @@ process_action(input_action_type at, pg_f32_2x event_value, pg_error* err)
 }
 
 FUNCTION void
-update_app(pg_input_queue* iq,
+update_app(pg_assets* assets,
+           pg_input_queue* iq,
            models_metadata* metadata,
            pg_f32_2x render_res,
            pg_scratch_allocator* transient_mem,
@@ -643,6 +643,8 @@ update_app(pg_input_queue* iq,
 
     // Animate.
     {
+        app_state.model_animation_count = model->animation_count;
+
         if (app_state.auto_rotate)
         {
             f32 auto_rotation_rate = 30.0f; // degrees/sec
@@ -924,6 +926,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
     pg_error error = {.log = &pg_windows_error_log};
     pg_error* err = &error;
 
+    pg_assets* assets = 0;
     models_metadata metadata = {0};
 
     pg_windows_init_window(&windows,
@@ -939,6 +942,7 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
 
     init_app(&pg_windows_file_read,
              &windows.permanent_mem,
+             &assets,
              &metadata,
              &windows.input_queue,
              &windows.gfx.renderer_data,
@@ -970,7 +974,8 @@ wWinMain(HINSTANCE inst, HINSTANCE prev_inst, WCHAR* cmd_args, s32 show_code)
                                 config.gamepad_count,
                                 err);
 
-        update_app(&windows.input_queue,
+        update_app(assets,
+                   &windows.input_queue,
                    &metadata,
                    windows.window.render_res,
                    &windows.transient_mem,
