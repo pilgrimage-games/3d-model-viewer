@@ -88,8 +88,6 @@ if defined all (
         mkdir !project_dir!\build\shaders\
     )
 
-    set dxc=!VULKAN_SDK!\Bin\dxc
-
     rem -Ges: Enable strict mode
     rem -enable_unbounded_descriptor_tables: Enable use of unbounded arrays (D3D12 only)
     set fxc_flags=-Ges -enable_unbounded_descriptor_tables
@@ -109,11 +107,12 @@ if defined all (
     rem -E: Set entrypoint name
     rem -T: Set shader target profile
     rem -Fo: Set output file path
-    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D11 -E vs -T vs_5_0 -Fo !project_dir!\build\shaders\d3d11_vs.dxbc > nul
-    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D11 -E ps -T ps_5_0 -Fo !project_dir!\build\shaders\d3d11_ps.dxbc > nul
+    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D11 -E vs -T vs_4_0 -Fo !project_dir!\build\shaders\d3d11_vs.dxbc > nul
+    fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D11 -E ps -T ps_4_0 -Fo !project_dir!\build\shaders\d3d11_ps.dxbc > nul
     fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D12 -E vs -T vs_5_1 -Fo !project_dir!\build\shaders\d3d12_vs.dxbc > nul
     fxc !project_dir!\shaders.hlsl !fxc_flags! -DD3D12 -E ps -T ps_5_1 -Fo !project_dir!\build\shaders\d3d12_ps.dxbc > nul
 
+    set dxc=!VULKAN_SDK!\Bin\dxc
     rem -Ges: Enable strict mode
     rem -spirv: Output SPIR-V
     rem -fvk-use-dx-layout: Use DirectX packing rules for uniform and storage buffers
