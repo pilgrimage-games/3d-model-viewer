@@ -233,7 +233,7 @@ imgui_ui(void)
             // exceed single digits.
             assert(app_state.model_animation_count <= 9);
 
-            c8* animation_name = "Animation _";
+            c8 animation_name[] = "Animation _";
             for (u32 i = 1; i <= app_state.model_animation_count; i += 1)
             {
                 animation_name[10] = (c8)((u32)'0' + i);
