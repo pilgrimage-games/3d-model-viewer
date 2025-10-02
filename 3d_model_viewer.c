@@ -166,7 +166,7 @@ reset_view(void)
     else if (app_state.model_id == MODEL_FOX)
     {
         app_state.scaling = pg_f32_3x_pack(0.015f);
-        app_state.rotation.y = 22.5f;
+        app_state.rotation.y = -70.0f;
         app_state.translation.y = -1.0f;
     }
     else if (app_state.model_id == MODEL_FTM)
