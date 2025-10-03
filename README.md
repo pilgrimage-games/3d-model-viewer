@@ -4,7 +4,7 @@
 Pilgrimage Games. It serves as a basic demonstration of the 3D capabilities of
 the proprietary engine.
 
-![screenshot](https://github.com/pilgrimage-games/3d-model-viewer/blob/main/screenshot.png?raw=true)
+[![Demo](demo.webp)](https://youtu.be/xh3sMvgR8wY)
 
 All code has been written from scratch in-house following "handmade"
 principles, with minimal use of external libraries and other dependencies. The
