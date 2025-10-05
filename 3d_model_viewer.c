@@ -781,6 +781,13 @@ update_app(pg_assets* assets,
                     = model->material_count;
                 renderer_data->buffer_data[gb].buffer = material_properties;
             }
+
+            if (renderer_data->buffer_data[gb].elem_count
+                > renderer_data->buffer_data[gb].max_elem_count)
+            {
+                PG_ERROR_MAJOR(
+                    "renderer buffer element count exceeds max element count");
+            }
         }
 
         // Declare (required and optional) textures for upcoming frame.
