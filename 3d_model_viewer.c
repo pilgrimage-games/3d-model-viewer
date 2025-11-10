@@ -229,15 +229,14 @@ imgui_ui(void)
                                      ImGuiTreeNodeFlags_DefaultOpen);
         if (animation_selection_active)
         {
-            // NOTE: This simple UI string expects animation counts to not
-            // exceed single digits.
-            assert(app_state.model_animation_count <= 9);
-
-            c8 animation_name[] = "Animation _";
             for (u32 i = 1; i <= app_state.model_animation_count; i += 1)
             {
-                animation_name[10] = (c8)((u32)'0' + i);
-                ImGui_RadioButtonIntPtr(animation_name,
+                c8 animation_label[15] = {0};
+                StringCchPrintfA(animation_label,
+                                 sizeof(animation_label),
+                                 "Animation %u",
+                                 i);
+                ImGui_RadioButtonIntPtr(animation_label,
                                         (s32*)&app_state.animation.id,
                                         i - 1);
             }
@@ -295,7 +294,8 @@ init_app(pg_file_read_fp pg_file_read,
                                  permanent_mem,
                                  err);
     pg_assets_verify(*assets, 0, 0, 0, 0, MODEL_COUNT, err);
-    static_assert(CAP(model_names) == MODEL_COUNT);
+    static_assert(CAP(model_names) == MODEL_COUNT,
+                  "unexpected model names count");
 
     // Get models metadata.
     for (u32 i = 0; i < (*assets)->model_count; i += 1)
@@ -398,6 +398,10 @@ init_app(pg_file_read_fp pg_file_read,
                 at->type = INPUT_ACTION_TYPE_ZOOM;
                 break;
             }
+            default:
+            {
+                break;
+            }
         }
     }
 
@@ -424,7 +428,8 @@ init_app(pg_file_read_fp pg_file_read,
                 .shader_stage = PG_SHADER_STAGE_PIXEL,
                 .max_elem_count = metadata->max_material_count,
                 .elem_size = sizeof(pg_asset_material_properties)}};
-        static_assert(CAP(buffer_data) == GRAPHICS_BUFFER_COUNT);
+        static_assert(CAP(buffer_data) == GRAPHICS_BUFFER_COUNT,
+                      "unexpected buffer data count");
 
         *renderer_data = (pg_graphics_renderer_data){
             .wireframe = app_state.wireframe_mode,
@@ -549,7 +554,7 @@ update_app(pg_assets* assets,
     // Process input.
     {
         // Process inputs in event queue.
-        for (iq->read_idx; iq->read_idx != iq->write_idx;
+        for (; iq->read_idx != iq->write_idx;
              iq->read_idx = (iq->read_idx + 1) % iq->event_count)
         {
             pg_input_event ie = iq->events[iq->read_idx];
@@ -626,7 +631,8 @@ update_app(pg_assets* assets,
         }
 
         // Process held inputs.
-        for (pg_input_event_type et = 0; et < CAP(iq->duration_held); et += 1)
+        for (pg_input_event_type et = 0; (usize)et < CAP(iq->duration_held);
+             et += 1)
         {
             input_action* ia = &app_state.input_action_map[et];
 
